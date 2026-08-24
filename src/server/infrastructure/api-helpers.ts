@@ -13,15 +13,21 @@ export interface ApiContext {
 }
 
 function sameOrigin(req: NextRequest): boolean {
-  const expected = req.nextUrl.origin;
+  const forwardedProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.nextUrl.protocol.replace(":", "");
+  const forwardedHost = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || req.headers.get("host");
+  const forwardedOrigin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : null;
+  const configuredOrigin = process.env.APP_URL ? (() => {
+    try { return new URL(process.env.APP_URL).origin; } catch { return null; }
+  })() : null;
+  const expectedOrigins = new Set([req.nextUrl.origin, forwardedOrigin, configuredOrigin].filter(Boolean));
   const origin = req.headers.get("origin");
   if (origin) {
-    try { return origin !== "null" && new URL(origin).origin === expected; } catch { return false; }
+    try { return origin !== "null" && expectedOrigins.has(new URL(origin).origin); } catch { return false; }
   }
 
   const referer = req.headers.get("referer");
   if (referer) {
-    try { return new URL(referer).origin === expected; } catch { return false; }
+    try { return expectedOrigins.has(new URL(referer).origin); } catch { return false; }
   }
 
   // Server-to-server calls generally omit browser navigation headers.

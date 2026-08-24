@@ -177,7 +177,12 @@ export function AddEntity() {
       });
       const bidResult = await bidResponse.json().catch(() => null) as { checkoutUrl?: string; reason?: string } | null;
       if (!bidResponse.ok || !bidResult?.checkoutUrl) {
-        toast.error("Checkout could not be started", { description: bidResult?.reason || "Your item was not added." });
+        const reason = bidResult?.reason === "csrf_failed"
+          ? "Please refresh the page and try again."
+          : bidResult?.reason === "api_unreachable"
+          ? "The board is temporarily unavailable. Please try again."
+          : "Your item was not added.";
+        toast.error("Checkout could not be started", { description: reason });
         return;
       }
       window.location.assign(bidResult.checkoutUrl);
@@ -379,13 +384,8 @@ export function AddEntity() {
             disabled={busy || !name.trim() || !initialBid.trim()}
             className="w-full py-4 bg-signal text-white font-display tracking-tighter2 text-lg hover:bg-signal-dim transition-colors disabled:opacity-40"
           >
-            {busy ? "PUTTING IT ON THE BOARD…" : "ADD + OPEN CHECKOUT →"}
+            {busy ? "ADDING…" : "ADD →"}
           </button>
-          <div className="text-center font-mono text-[9px] tracking-widest text-muted-foreground">
-            {(resolvedUrl || url.trim())
-              ? `LINK GOES LIVE ON THE BOARD · ${(() => { const p = detectPlatform(resolvedUrl || url); return p ? p.openLabel : hostOf(resolvedUrl || url); })()}`
-              : "ADD A LINK SO PEOPLE CAN FIND THE ORIGINAL · OPTIONAL BUT RECOMMENDED"}
-          </div>
         </div>
       </DialogContent>
     </Dialog>
