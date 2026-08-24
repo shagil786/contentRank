@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { realtimeUrl } from "@/server/infrastructure/realtime-url";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export async function GET(req: NextRequest) {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 1500);
     const res = await fetch(
-      `http://localhost:3004/preview?id=${encodeURIComponent(id)}&amount=${amount}`,
+      realtimeUrl(`preview?id=${encodeURIComponent(id)}&amount=${amount}`),
       { signal: ctrl.signal, cache: "no-store" }
     );
     clearTimeout(t);

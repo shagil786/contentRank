@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AddEntityRequest } from "@/lib/outrank/types";
+import { realtimeUrl } from "@/server/infrastructure/realtime-url";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest) {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 2500);
-    const res = await fetch("http://localhost:3004/add", {
+    const res = await fetch(realtimeUrl("add"), {
       method: "POST",
       signal: ctrl.signal,
       headers: { "Content-Type": "application/json" },

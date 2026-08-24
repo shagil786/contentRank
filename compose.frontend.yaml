@@ -1,0 +1,20 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    env_file:
+      - /opt/contentrank/backend/.env
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      APP_URL: https://content-rank.lol
+      REALTIME_BASE_URL: http://backend-realtime-1:3004
+    networks:
+      - backend_default
+    restart: unless-stopped
+
+networks:
+  backend_default:
+    external: true

@@ -5,6 +5,7 @@ import { prepareApiContext } from "@/server/infrastructure/api-helpers";
 import { fetchLeaderboard } from "@/server/application/fetch-leaderboard";
 import type { LeaderState, Entity, Category } from "@/lib/outrank/types";
 import { captureServerError } from "@/server/infrastructure/error-tracker";
+import { realtimeUrl } from "@/server/infrastructure/realtime-url";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
     if (view.entries.length === 0) {
       // fall back to realtime engine cache
       try {
-        const r = await fetch("http://localhost:3004/state", { cache: "no-store" });
+        const r = await fetch(realtimeUrl("state"), { cache: "no-store" });
         if (r.ok) {
           const data = (await r.json()) as LeaderState;
           return NextResponse.json({ ...data, entities: data.entities.slice(0, limit), nextCursor: undefined }, { headers: { "Cache-Control": "no-store", "X-Request-Id": ctx.requestId } });
