@@ -1,0 +1,378 @@
+"use client";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useState, useCallback } from "react";
+import { useUI } from "@/lib/outrank/store";
+import { useRealtime } from "./providers";
+import { CATEGORIES, type Category, type EntityKind, type OgResult } from "@/lib/outrank/types";
+import { detectPlatform } from "@/lib/outrank/platform";
+import { toast } from "sonner";
+
+// OUTRANK-styled input classes (sharp corners, mono font, editorial)
+// Force explicit height + line-height so Select and Input match exactly.
+const inputCls = "bg-transparent border-ink/30 font-mono text-xs focus-visible:border-ink focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none h-10 min-h-10 leading-none";
+const inputLgCls = "bg-transparent border-ink/30 font-display tracking-tighter2 text-lg focus-visible:border-ink focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none h-12 min-h-12 leading-none";
+
+const KINDS: { id: EntityKind; label: string }[] = [
+  { id: "movie", label: "Movie" },
+  { id: "show", label: "TV Show" },
+  { id: "game", label: "Game" },
+  { id: "song", label: "Song" },
+  { id: "album", label: "Album" },
+  { id: "creator", label: "Creator" },
+  { id: "post", label: "Post" },
+  { id: "product", label: "Product" },
+  { id: "website", label: "Website" },
+  { id: "ai", label: "AI Tool" },
+  { id: "topic", label: "Topic / Meme" },
+  { id: "person", label: "Person" },
+];
+
+// Heuristic: guess kind + category from the URL host so a pasted link
+// pre-configures the form. User can always override.
+function guessFromUrl(url: string): { kind?: EntityKind; category?: Category } {
+  const host = (() => {
+    try {
+      return new URL(url.startsWith("http") ? url : `https://${url}`).hostname.replace(/^www\./, "").toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+  if (!host) return {};
+  if (host.includes("imdb") || host.includes("letterboxd") || host.includes("rogerebert")) return { kind: "movie", category: "movies" };
+  if (host.includes("tmdb")) return { kind: "movie", category: "movies" };
+  if (host.includes("trakt") || host.includes("metacritic") && url.includes("tv")) return { kind: "show", category: "tv" };
+  if (host.includes("myanimelist") || host.includes("anilist") || host.includes("crunchyroll")) return { kind: "anime", category: "anime" };
+  if (host.includes("steampowered") || host.includes("igdb") || host.includes("epicgames") || host.includes("gog")) return { kind: "game", category: "games" };
+  if (host.includes("spotify") || host.includes("soundcloud") || host.includes("bandcamp")) return { kind: "song", category: "music" };
+  if (host.includes("music.apple")) return { kind: "album", category: "music" };
+  if (host.includes("youtube") || host.includes("youtu.be") || host.includes("tiktok") || host.includes("instagram") || host.includes("x.com") || host.includes("twitter") || host.includes("reddit") || host.includes("threads")) return { kind: "post", category: "creators" };
+  if (host.includes("twitch")) return { kind: "creator", category: "creators" };
+  if (host.includes("openai") || host.includes("anthropic") || host.includes("perplexity") || host.includes("huggingface")) return { kind: "ai", category: "ai" };
+  return { kind: "website", category: "tech" };
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url.startsWith("http") ? url : `https://${url}`).hostname.replace(/^www\./, "").toUpperCase();
+  } catch {
+    return "";
+  }
+}
+
+export function AddEntity() {
+  const open = useUI((s) => s.addOpen);
+  const setOpen = useUI((s) => s.setAddOpen);
+  const openEntity = useUI((s) => s.openEntity);
+  const { addEntity } = useRealtime();
+
+  const [url, setUrl] = useState("");
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState<Category>("movies");
+  const [kind, setKind] = useState<EntityKind>("movie");
+  const [sub, setSub] = useState("");
+  const [blurb, setBlurb] = useState("");
+  const [image, setImage] = useState<string | undefined>(undefined);
+  const [resolvedUrl, setResolvedUrl] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [fetched, setFetched] = useState(false);
+
+  const reset = () => {
+    setUrl("");
+    setName("");
+    setSub("");
+    setBlurb("");
+    setKind("movie");
+    setCategory("movies");
+    setImage(undefined);
+    setResolvedUrl(undefined);
+    setFetched(false);
+    setFetching(false);
+  };
+
+  // Fetch OpenGraph metadata from /api/og and auto-fill the form.
+  // Only fills fields that are empty (so the user's edits are preserved on re-fetch).
+  const fetchOg = useCallback(async () => {
+    if (!url.trim()) {
+      toast.error("Paste a link first");
+      return;
+    }
+    setFetching(true);
+    try {
+      const r = await fetch(`/api/og?url=${encodeURIComponent(url.trim())}`, { cache: "no-store" });
+      const data = (await r.json()) as OgResult;
+      if (!data.ok) {
+        toast.error(`Couldn't read that link — ${data.reason || "unknown"}`, {
+          description: "You can still fill the fields manually.",
+        });
+        setFetching(false);
+        return;
+      }
+      // auto-fill from OG, only if field is empty
+      if (data.title && !name) setName(data.title);
+      if (data.description && !blurb) setBlurb(data.description.slice(0, 240));
+      if (data.siteName && !sub) setSub(data.siteName);
+      if (data.image) setImage(data.image);
+      if (data.url) setResolvedUrl(data.url);
+      // smart kind/category guess from host
+      const g = guessFromUrl(data.url || url);
+      if (g.kind && kind === "movie") setKind(g.kind);
+      if (g.category && category === "movies") setCategory(g.category);
+      setFetched(true);
+      toast.success(`Fetched from ${data.siteName || hostOf(data.url || url)}`, {
+        description: data.title ? data.title.slice(0, 60) : undefined,
+      });
+    } catch {
+      toast.error("Fetch failed — fill the fields manually.");
+    } finally {
+      setFetching(false);
+    }
+  }, [url, name, blurb, sub, kind, category]);
+
+  // Re-fetch automatically when the user pastes a URL and blurs the field.
+  // Always run the platform guess (even if the fetch later fails) so a YouTube
+  // link still auto-selects "post / creators", an Instagram link still picks
+  // "post / creators", etc.
+  const onUrlBlur = () => {
+    if (!url.trim()) return;
+    const g = guessFromUrl(url);
+    if (g.kind && kind === "movie") setKind(g.kind);
+    if (g.category && category === "movies") setCategory(g.category);
+    if (!fetched && !fetching) {
+      fetchOg();
+    }
+  };
+
+  const submit = async () => {
+    if (!name.trim()) {
+      toast.error("Give it a name");
+      return;
+    }
+    setBusy(true);
+    try {
+      const link = resolvedUrl || url.trim() || undefined;
+      const r = await addEntity({ name, category, kind, sub, blurb, link, image });
+      if (r?.ok && r.entity) {
+        toast.success(`${r.entity.name} IS ON THE BOARD`, {
+          description: `Ranking #${String(r.entity.rank).padStart(2, "0")} — go defend it.`,
+        });
+        setOpen(false);
+        reset();
+        openEntity(r.entity as any);
+      } else {
+        toast.error(r?.reason || "Could not add");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="max-w-lg w-[92vw] bg-paper text-ink border-ink p-0 overflow-hidden">
+        <DialogHeader className="sr-only">
+          <DialogTitle>Put something on the board</DialogTitle>
+          <DialogDescription>Add a new entity to the OUTRANK leaderboard.</DialogDescription>
+        </DialogHeader>
+        <div className="bg-ink text-paper px-5 py-3 flex items-center justify-between">
+          <span className="font-mono text-[10px] tracking-widest">+ PUT SOMETHING ON THE BOARD</span>
+          <button onClick={() => setOpen(false)} className="font-mono text-[10px] tracking-widest text-paper/60 hover:text-signal">CLOSE ✕</button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {/* THE LINK — where the content actually lives. This is the point:
+              visitors click it to view the original post/video/song on its
+              native platform, driving traffic back to the creator. */}
+          <div>
+            <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">
+              LINK TO THIS <span className="text-signal">·</span> WHERE DOES IT LIVE?
+            </label>
+            <div className="flex gap-2">
+              <Input
+                value={url}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setFetched(false);
+                }}
+                onBlur={onUrlBlur}
+                placeholder="instagram post, youtube video, spotify track, tweet…"
+                className={`flex-1 min-w-0 ${inputCls}`}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <button
+                onClick={fetchOg}
+                disabled={fetching || !url.trim()}
+                className="px-3 py-3 font-mono text-[10px] tracking-widest border border-ink/30 hover:bg-ink hover:text-paper transition-colors disabled:opacity-40 shrink-0"
+                title="Optional: grab a preview image + title from the link"
+              >
+                {fetching ? "…" : "GRAB PREVIEW"}
+              </button>
+            </div>
+            {/* platform badge + preview */}
+            {(resolvedUrl || url.trim()) && (
+              <div className="mt-2 flex items-center gap-3 p-2.5 border border-ink/15 bg-paper-dim/40">
+                {image && (
+                  <img
+                    src={image}
+                    alt=""
+                    className="h-12 w-12 object-cover shrink-0 bg-ink/10"
+                    onError={(e) => ((e.currentTarget.style.display = "none"))}
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  {(() => {
+                    const p = detectPlatform(resolvedUrl || url);
+                    return (
+                      <div className="flex items-center gap-2 mb-0.5">
+                        {p && (
+                          <span className="font-mono text-[9px] tracking-widest px-1.5 py-0.5 text-white" style={{ background: p.color }}>
+                            {p.label}
+                          </span>
+                        )}
+                        <span className="font-mono text-[9px] tracking-widest text-up">✓ LINK READY</span>
+                      </div>
+                    );
+                  })()}
+                  <div className="font-mono text-[10px] text-muted-foreground truncate">
+                    {(() => {
+                      const p = detectPlatform(resolvedUrl || url);
+                      return p ? `${p.openLabel} · ${p.host}` : hostOf(resolvedUrl || url);
+                    })()}
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setImage(undefined); setResolvedUrl(undefined); setFetched(false); }}
+                  className="font-mono text-[9px] tracking-widest text-muted-foreground hover:text-signal shrink-0"
+                >
+                  CLEAR
+                </button>
+              </div>
+            )}
+            <div className="mt-1.5 font-mono text-[9px] tracking-widest text-muted-foreground leading-relaxed">
+              THIS LINK IS SHOWN ON THE BOARD · PEOPLE CLICK IT TO VIEW THE ORIGINAL · DRIVES VIEWS TO THE CREATOR
+            </div>
+          </div>
+
+          {/* divider */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-ink/15" />
+            <span className="font-mono text-[9px] tracking-widest text-muted-foreground">THE DETAILS</span>
+            <div className="flex-1 h-px bg-ink/15" />
+          </div>
+
+          {/* STEP 2: kind */}
+          <div>
+            <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">WHAT ARE WE RANKING?</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {KINDS.map((k) => (
+                <button
+                  key={k.id}
+                  onClick={() => {
+                    setKind(k.id);
+                    // auto-set category by kind
+                    if (k.id === "movie") setCategory("movies");
+                    else if (k.id === "show") setCategory("tv");
+                    else if (k.id === "anime") setCategory("anime");
+                    else if (k.id === "game") setCategory("games");
+                    else if (k.id === "song" || k.id === "album") setCategory("music");
+                    else if (k.id === "creator" || k.id === "post") setCategory("creators");
+                    else if (k.id === "ai") setCategory("ai");
+                    else if (k.id === "product" || k.id === "website") setCategory("tech");
+                  }}
+                  className={`py-2.5 font-mono text-[10px] tracking-widest border transition-all ${
+                    kind === k.id ? "bg-ink text-paper border-ink" : "border-ink/25 hover:bg-ink hover:text-paper"
+                  }`}
+                >
+                  {k.label.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* name */}
+          <div>
+            <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">NAME</label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. THE BRUTALIST"
+              className={`w-full ${inputLgCls}`}
+            />
+          </div>
+
+          {/* category + context */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="min-w-0">
+              <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">CATEGORY</label>
+              <Select value={category} onValueChange={(v) => setCategory(v as Category)}>
+                <SelectTrigger className={`w-full min-w-0 ${inputCls}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-paper border-ink/30 rounded-none">
+                  {CATEGORIES.filter((c) => c.id !== "global").map((c) => (
+                    <SelectItem key={c.id} value={c.id} className="font-mono text-xs rounded-none focus:bg-ink focus:text-paper">
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="min-w-0">
+              <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">CONTEXT (YEAR · MAKER · PLATFORM)</label>
+              <Input
+                value={sub}
+                onChange={(e) => setSub(e.target.value)}
+                placeholder="2024 · A24"
+                className={`w-full min-w-0 ${inputCls}`}
+              />
+            </div>
+          </div>
+
+          {/* blurb */}
+          <div>
+            <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">ONE-LINE BLURB</label>
+            <Textarea
+              value={blurb}
+              onChange={(e) => setBlurb(e.target.value)}
+              placeholder="Why does it deserve a spot?"
+              rows={2}
+              className={`w-full ${inputCls} resize-none`}
+            />
+          </div>
+
+          {/* commit */}
+          <button
+            onClick={submit}
+            disabled={busy || !name.trim()}
+            className="w-full py-4 bg-signal text-white font-display tracking-tighter2 text-lg hover:bg-signal-dim transition-colors disabled:opacity-40"
+          >
+            {busy ? "PUTTING IT ON THE BOARD…" : "CLAIM ITS SPOT →"}
+          </button>
+          <div className="text-center font-mono text-[9px] tracking-widest text-muted-foreground">
+            {(resolvedUrl || url.trim())
+              ? `LINK GOES LIVE ON THE BOARD · ${(() => { const p = detectPlatform(resolvedUrl || url); return p ? p.openLabel : hostOf(resolvedUrl || url); })()}`
+              : "ADD A LINK SO PEOPLE CAN FIND THE ORIGINAL · OPTIONAL BUT RECOMMENDED"}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

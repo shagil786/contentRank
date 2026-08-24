@@ -1,0 +1,17 @@
+{
+  "name": "OUTRANK",
+  "short_name": "OUTRANK",
+  "description": "A live attention market where the internet competes for the top spot.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f0e8",
+  "theme_color": "#f4f0e8",
+  "icons": [
+    {
+      "src": "/outrank/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
