@@ -55,7 +55,7 @@ export function BoostPanel() {
           </SheetHeader>
           <div className="sticky top-0 bg-ink text-paper px-4 sm:px-6 py-3 flex items-center justify-between rule-b">
             <span className="font-mono text-[10px] tracking-widest flex items-center gap-2">
-              <span className="inline-block w-2 h-2 bg-signal live-dot" /> BOOST PANEL
+              <span className="inline-block w-2 h-2 bg-signal live-dot" /> BID PANEL
             </span>
             <button onClick={close} className="font-mono text-[10px] tracking-widest text-paper/70 hover:text-signal">CLOSE ✕</button>
           </div>
@@ -122,7 +122,11 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
       window.location.assign(result.checkoutUrl);
     } catch (error) {
       console.error("Dodo checkout failed", error);
-      toast.error("Checkout could not be started", { description: "Your bid was not charged." });
+      toast.error("Checkout could not be started", {
+        description: error instanceof Error && error.message === "csrf_failed"
+          ? "Please refresh the page and try again."
+          : "Your bid was not charged.",
+      });
       setSponsoring(false);
     }
   }, [effAmount, newRank, sponsoring, target.id]);
@@ -235,9 +239,6 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
       >
         {sponsoring ? "OPENING CHECKOUT…" : `PLACE BID · ${formatUsd(effAmount)} →`}
       </button>
-      <div className="text-center mt-2 font-mono text-[9px] tracking-widest text-muted-foreground">
-        PAYMENT IS REQUIRED · SECURE DODO CHECKOUT
-      </div>
     </div>
   );
 }
