@@ -13,7 +13,7 @@ export function PostBidPrompt() {
       <DialogContent className="max-w-lg w-[92vw] bg-paper text-ink border-ink p-0 overflow-hidden" showCloseButton={false}>
         <DialogHeader className="sr-only">
           <DialogTitle>Bid placed</DialogTitle>
-          <DialogDescription>Choose whether to track or claim this entity.</DialogDescription>
+          <DialogDescription>Choose whether to track this entity.</DialogDescription>
         </DialogHeader>
         {postBid && (
           <div className="p-5 sm:p-8 text-center">
@@ -28,15 +28,6 @@ export function PostBidPrompt() {
               className="w-full py-3.5 bg-signal text-white font-mono text-[11px] tracking-widest hover:bg-signal-dim transition-colors mb-2"
             >
               TRACK {postBid.entity.name} →
-            </button>
-            <button
-              onClick={() => {
-                useUI.getState().openClaim(postBid.entity);
-                close();
-              }}
-              className="w-full py-3 font-mono text-[11px] tracking-widest border border-ink/30 hover:bg-ink hover:text-paper transition-colors mb-2"
-            >
-              CLAIM THIS ENTITY →
             </button>
             <button
               onClick={close}
