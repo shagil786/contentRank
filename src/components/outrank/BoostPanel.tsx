@@ -15,9 +15,7 @@ import { formatScore, formatUsd } from "@/lib/outrank/types";
 import { RankNumber } from "./RankNumber";
 import { ScoreCounter } from "./ScoreCounter";
 import { Poster } from "./Poster";
-import { useUI } from "@/lib/outrank/store";
 import { useRealtime } from "./providers";
-import { recordBoost } from "@/lib/outrank/identity";
 import { toast } from "sonner";
 
 // USD boost presets (in cents for precision). No daily limit — users pay to move up.
@@ -68,12 +66,11 @@ export function BoostPanel() {
 }
 
 function BoostBody({ target, close }: { target: Entity; close: () => void }) {
-  const { boost, preview } = useRealtime();
+  const { preview } = useRealtime();
 
   const [amount, setAmount] = useState(500); // default $5
   const [custom, setCustom] = useState("");
   const [projection, setProjection] = useState<Projection | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [sponsoring, setSponsoring] = useState(false);
 
   // custom is entered in DOLLARS; convert to cents internally. Max $1B (anti-abuse).
@@ -95,32 +92,6 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
     };
   }, [target, effAmount, preview]);
 
-  const onCommit = useCallback(() => {
-    if (effAmount < 100) {
-      toast.error("Minimum boost is $1");
-      return;
-    }
-    setSubmitting(true);
-    boost({ entityId: target.id, amount: effAmount });
-    recordBoost({ entityId: target.id, entityName: target.name, amount: effAmount, rank: projection?.newRank ?? target.rank, ts: Date.now() });
-    const verb =
-      projection && projection.newRank === 1
-        ? "TOOK #1"
-        : projection && projection.newRank < (projection.prevRank || 99)
-        ? "BOOSTED"
-        : "BACKED";
-    toast.success(`${target.name} ${verb} · ${formatUsd(effAmount)}`, {
-      description: projection
-        ? `#${String(projection.prevRank).padStart(2, "0")} → #${String(projection.newRank).padStart(2, "0")}`
-        : undefined,
-    });
-    setTimeout(() => {
-      setSubmitting(false);
-      useUI.getState().openPostBid(target, effAmount);
-      close();
-    }, 650);
-  }, [target, effAmount, boost, projection]);
-
   const newRank = projection?.newRank ?? target.rank;
   const prevRank = target.rank;
 
@@ -139,7 +110,7 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
           amount: effAmount,
           currency: "usd",
           targetRank: newRank,
-          successUrl: `${window.location.origin}/?bid=success`,
+          successUrl: `${window.location.origin}/?bid=success&entityId=${encodeURIComponent(target.id)}&amount=${effAmount}`,
           cancelUrl: `${window.location.origin}/?bid=cancel`,
         }),
       });
@@ -150,7 +121,7 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
       window.location.assign(result.checkoutUrl);
     } catch (error) {
       console.error("Dodo checkout failed", error);
-      toast.error("Checkout could not be started", { description: "Your boost was not charged." });
+      toast.error("Checkout could not be started", { description: "Your bid was not charged." });
       setSponsoring(false);
     }
   }, [effAmount, newRank, sponsoring, target.id]);
@@ -181,7 +152,7 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
       {/* rank projection */}
       <div className="rule-b py-5">
         <div className="font-mono text-[10px] tracking-widest text-muted-foreground mb-3">
-          {calc ? "CALCULATING NEW POSITION…" : "YOUR BOOST"}
+          {calc ? "CALCULATING NEW POSITION…" : "YOUR BID"}
         </div>
         <div className="flex items-center justify-center gap-3 sm:gap-6">
           <div className="text-center">
@@ -221,7 +192,7 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
 
       {/* amount selector — USD presets */}
       <div className="py-5 rule-b">
-        <div className="font-mono text-[10px] tracking-widest text-muted-foreground mb-3">BOOST AMOUNT (USD)</div>
+        <div className="font-mono text-[10px] tracking-widest text-muted-foreground mb-3">BID AMOUNT (USD)</div>
         <div className="grid grid-cols-4 gap-2">
           {PRESETS.map((p) => (
             <button
@@ -256,25 +227,15 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
         </div>
       </div>
 
-      {/* free organic boost */}
-      <button
-        onClick={onCommit}
-        disabled={submitting || effAmount < 100}
-        className={`w-full mt-5 py-4 font-display tracking-tighter2 text-lg transition-all ${
-          takesOne ? "bg-signal text-white hover:bg-signal-dim" : "bg-ink text-paper hover:bg-signal"
-        } disabled:opacity-40 disabled:cursor-not-allowed`}
-      >
-        {submitting ? "PROCESSING…" : takesOne ? `TAKE #1 · ${formatUsd(effAmount)} →` : defending ? `DEFEND #1 · ${formatUsd(effAmount)} →` : `BOOST ${formatUsd(effAmount)} →`}
-      </button>
       <button
         onClick={onSponsor}
-        disabled={sponsoring || submitting || effAmount < 100}
-        className="w-full mt-2 py-3 border border-signal text-signal font-mono text-[11px] tracking-widest hover:bg-signal hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled={sponsoring || effAmount < 100}
+        className="w-full mt-5 py-4 bg-signal text-white font-display tracking-tighter2 text-lg hover:bg-signal-dim transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {sponsoring ? "OPENING CHECKOUT…" : `SPONSOR WITH DODO · ${formatUsd(effAmount)} →`}
+        {sponsoring ? "OPENING CHECKOUT…" : `PLACE BID · ${formatUsd(effAmount)} →`}
       </button>
       <div className="text-center mt-2 font-mono text-[9px] tracking-widest text-muted-foreground">
-        FREE BOOST IS INSTANT · SPONSORING OPENS SECURE DODO CHECKOUT
+        PAYMENT IS REQUIRED · SECURE DODO CHECKOUT
       </div>
     </div>
   );

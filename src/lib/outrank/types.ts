@@ -172,7 +172,7 @@ export interface BoostRequest {
 export interface AddEntityRequest {
   name: string;
   category: Category;
-  kind: EntityKind;
+  kind?: EntityKind;
   sub: string;
   blurb: string;
   link?: string; // source URL — used to fetch OpenGraph metadata before commit

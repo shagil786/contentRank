@@ -26,22 +26,7 @@ import { toast } from "sonner";
 // OUTRANK-styled input classes (sharp corners, mono font, editorial)
 // Force explicit height + line-height so Select and Input match exactly.
 const inputCls = "bg-transparent border-ink/30 font-mono text-xs focus-visible:border-ink focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none h-10 min-h-10 leading-none";
-const inputLgCls = "bg-transparent border-ink/30 font-display tracking-tighter2 text-lg focus-visible:border-ink focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none h-12 min-h-12 leading-none";
-
-const KINDS: { id: EntityKind; label: string }[] = [
-  { id: "movie", label: "Movie" },
-  { id: "show", label: "TV Show" },
-  { id: "game", label: "Game" },
-  { id: "song", label: "Song" },
-  { id: "album", label: "Album" },
-  { id: "creator", label: "Creator" },
-  { id: "post", label: "Post" },
-  { id: "product", label: "Product" },
-  { id: "website", label: "Website" },
-  { id: "ai", label: "AI Tool" },
-  { id: "topic", label: "Topic / Meme" },
-  { id: "person", label: "Person" },
-];
+const inputLgCls = "bg-transparent border-ink/30 font-display tracking-tighter2 text-lg focus-visible:border-ink focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none h-11 min-h-11 leading-none";
 
 // Heuristic: guess kind + category from the URL host so a pasted link
 // pre-configures the form. User can always override.
@@ -84,7 +69,7 @@ export function AddEntity() {
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
   const [category, setCategory] = useState<Category>("movies");
-  const [kind, setKind] = useState<EntityKind>("movie");
+  const [kind, setKind] = useState<EntityKind | undefined>(undefined);
   const [sub, setSub] = useState("");
   const [blurb, setBlurb] = useState("");
   const [initialBid, setInitialBid] = useState("");
@@ -100,7 +85,7 @@ export function AddEntity() {
     setSub("");
     setBlurb("");
     setInitialBid("");
-    setKind("movie");
+    setKind(undefined);
     setCategory("movies");
     setImage(undefined);
     setResolvedUrl(undefined);
@@ -134,7 +119,7 @@ export function AddEntity() {
       if (data.url) setResolvedUrl(data.url);
       // smart kind/category guess from host
       const g = guessFromUrl(data.url || url);
-      if (g.kind && kind === "movie") setKind(g.kind);
+      if (g.kind) setKind(g.kind);
       if (g.category && category === "movies") setCategory(g.category);
       setFetched(true);
       toast.success(`Fetched from ${data.siteName || hostOf(data.url || url)}`, {
@@ -145,7 +130,7 @@ export function AddEntity() {
     } finally {
       setFetching(false);
     }
-  }, [url, name, blurb, sub, kind, category]);
+  }, [url, name, blurb, sub, category]);
 
   // Re-fetch automatically when the user pastes a URL and blurs the field.
   // Always run the platform guess (even if the fetch later fails) so a YouTube
@@ -154,7 +139,7 @@ export function AddEntity() {
   const onUrlBlur = () => {
     if (!url.trim()) return;
     const g = guessFromUrl(url);
-    if (g.kind && kind === "movie") setKind(g.kind);
+    if (g.kind) setKind(g.kind);
     if (g.category && category === "movies") setCategory(g.category);
     if (!fetched && !fetching) {
       fetchOg();
@@ -167,8 +152,8 @@ export function AddEntity() {
       return;
     }
     const bidDollars = Number.parseFloat(initialBid);
-    if (initialBid.trim() && (!Number.isFinite(bidDollars) || bidDollars < 1)) {
-      toast.error("Initial bid must be at least $1");
+    if (!initialBid.trim() || !Number.isFinite(bidDollars) || bidDollars < 1) {
+      toast.error("Enter an initial bid of at least $1");
       return;
     }
     setBusy(true);
@@ -232,7 +217,7 @@ export function AddEntity() {
           <button onClick={() => setOpen(false)} className="font-mono text-[10px] tracking-widest text-paper/60 hover:text-signal">CLOSE ✕</button>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="p-4 sm:p-5 space-y-4">
           {/* THE LINK — where the content actually lives. This is the point:
               visitors click it to view the original post/video/song on its
               native platform, driving traffic back to the creator. */}
@@ -315,35 +300,6 @@ export function AddEntity() {
             <div className="flex-1 h-px bg-ink/15" />
           </div>
 
-          {/* STEP 2: kind */}
-          <div>
-            <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">WHAT ARE WE RANKING?</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {KINDS.map((k) => (
-                <button
-                  key={k.id}
-                  onClick={() => {
-                    setKind(k.id);
-                    // auto-set category by kind
-                    if (k.id === "movie") setCategory("movies");
-                    else if (k.id === "show") setCategory("tv");
-                    else if (k.id === "anime") setCategory("anime");
-                    else if (k.id === "game") setCategory("games");
-                    else if (k.id === "song" || k.id === "album") setCategory("music");
-                    else if (k.id === "creator" || k.id === "post") setCategory("creators");
-                    else if (k.id === "ai") setCategory("ai");
-                    else if (k.id === "product" || k.id === "website") setCategory("tech");
-                  }}
-                  className={`py-2.5 font-mono text-[10px] tracking-widest border transition-all ${
-                    kind === k.id ? "bg-ink text-paper border-ink" : "border-ink/25 hover:bg-ink hover:text-paper"
-                  }`}
-                >
-                  {k.label.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* name */}
           <div>
             <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">NAME</label>
@@ -356,9 +312,9 @@ export function AddEntity() {
           </div>
 
           {/* category + context */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2.5">
             <div className="min-w-0">
-              <div className="min-h-10 mb-2 flex items-end">
+              <div className="min-h-8 mb-1.5 flex items-end">
                 <label className="font-mono text-[10px] tracking-widest text-muted-foreground leading-tight">CATEGORY</label>
               </div>
               <Select value={category} onValueChange={(v) => setCategory(v as Category)}>
@@ -375,7 +331,7 @@ export function AddEntity() {
               </Select>
             </div>
             <div className="min-w-0">
-              <div className="min-h-10 mb-2 flex items-end">
+              <div className="min-h-8 mb-1.5 flex items-end">
                 <label className="font-mono text-[10px] tracking-widest text-muted-foreground leading-tight">CONTEXT (YEAR · MAKER · PLATFORM)</label>
               </div>
               <Input
@@ -390,7 +346,7 @@ export function AddEntity() {
           {/* optional first sponsored bid */}
           <div>
             <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">
-              INITIAL BID <span className="text-signal">·</span> OPTIONAL USD AMOUNT
+              INITIAL BID <span className="text-signal">·</span> USD AMOUNT
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted-foreground">$</span>
@@ -401,12 +357,12 @@ export function AddEntity() {
                 inputMode="decimal"
                 value={initialBid}
                 onChange={(e) => setInitialBid(e.target.value)}
-                placeholder="Leave blank for no paid bid"
+                placeholder="Enter your opening bid"
                 className={`w-full pl-7 ${inputCls}`}
               />
             </div>
             <div className="mt-1.5 font-mono text-[9px] tracking-widest text-muted-foreground leading-relaxed">
-              ENTER A CUSTOM AMOUNT TO OPEN CHECKOUT AFTER THIS ITEM IS ADDED · MINIMUM $1
+              YOUR OPENING BID STARTS THE PAID AUCTION · MINIMUM $1
             </div>
           </div>
 
@@ -425,10 +381,10 @@ export function AddEntity() {
           {/* commit */}
           <button
             onClick={submit}
-            disabled={busy || !name.trim()}
+            disabled={busy || !name.trim() || !initialBid.trim()}
             className="w-full py-4 bg-signal text-white font-display tracking-tighter2 text-lg hover:bg-signal-dim transition-colors disabled:opacity-40"
           >
-            {busy ? "PUTTING IT ON THE BOARD…" : initialBid.trim() ? "ADD + OPEN CHECKOUT →" : "CLAIM ITS SPOT →"}
+            {busy ? "PUTTING IT ON THE BOARD…" : "ADD + OPEN CHECKOUT →"}
           </button>
           <div className="text-center font-mono text-[9px] tracking-widest text-muted-foreground">
             {(resolvedUrl || url.trim())

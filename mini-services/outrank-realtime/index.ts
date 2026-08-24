@@ -536,12 +536,16 @@ io.on("connection", (socket) => {
   });
 
   socket.on("boost", (req: BoostRequest) => {
-    fighting += 1;
-    io.emit("presence.updated", { type: "presence.updated", count: presence, fighting } as const);
-    const r = applyBoost(req, socket.id, false);
-    fighting = Math.max(0, fighting - 1);
-    io.emit("presence.updated", { type: "presence.updated", count: presence, fighting } as const);
-    socket.emit("boost.ack", { type: "boost.ack", ...r.ack, reason: r.reason, entityId: req.entityId } as const);
+    socket.emit("boost.ack", {
+      type: "boost.ack",
+      ok: false,
+      reason: "paid_bid_required",
+      entityId: req.entityId,
+      newRank: 0,
+      prevRank: 0,
+      newScore: 0,
+      remaining: 0,
+    } as const);
   });
 
   socket.on("preview", (req: { entityId: string; amount: number }, ackFn?: (r: any) => void) => {
