@@ -39,6 +39,7 @@ export interface RankingRepository {
   // sponsored
   appendBid(b: Omit<SponsoredBid, "id" | "createdAt">): Promise<SponsoredBid>;
   findBidByIdempotencyKey(key: string): Promise<SponsoredBid | null>;
+  findBidByPaymentId(paymentId: string): Promise<SponsoredBid | null>;
   updateBidStatus(id: string, status: SponsoredBid["status"], paymentId?: string, settledAt?: Date): Promise<void>;
   activeBidsByContent(contentId: string): Promise<SponsoredBid[]>;
 }

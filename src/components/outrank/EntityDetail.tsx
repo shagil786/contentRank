@@ -62,7 +62,7 @@ export function EntityDetail({ entity, allEntities }: Props) {
 
   const delta = live.prevRank - live.rank;
   const isOne = live.rank === 1;
-  const verb = isOne ? "DEFEND #1" : `TAKE #${String(live.rank - 1).padStart(2, "0")}`;
+  const verb = isOne ? "BID TO HOLD #1" : `BID TO TAKE #${String(live.rank - 1).padStart(2, "0")}`;
 
   const content = (
     <div>

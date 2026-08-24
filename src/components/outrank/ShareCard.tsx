@@ -117,6 +117,7 @@ export function ShareCard() {
               <Poster
                 entity={target}
                 variant="poster"
+                showOverlay={false}
                 className="absolute inset-0 h-full w-full"
               />
               {/* Darken for legibility */}
@@ -149,12 +150,12 @@ export function ShareCard() {
               </div>
 
               {/* Bottom block: name + branding */}
-              <div className="absolute bottom-0 left-0 right-0 p-4 text-paper">
+              <div className="absolute bottom-0 left-0 right-0 p-4 text-paper overflow-hidden">
                 <div className="font-mono text-[10px] tracking-widest text-signal mb-1.5">
                   ON OUTRANK
                 </div>
                 <div
-                  className="font-display leading-[0.86] tracking-tighter2"
+                  className="font-display leading-[0.86] tracking-tighter2 line-clamp-2 break-words"
                   style={{ fontSize: "clamp(1.6rem, 6.5vw, 2.6rem)" }}
                 >
                   {target.name}

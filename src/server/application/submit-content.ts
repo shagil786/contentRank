@@ -7,7 +7,7 @@ import { audit } from "../infrastructure/request-context";
 import { moderateContent } from "../domain/moderation/rules";
 import { guessKindFromPlatform } from "../adapters/platforms/adapters";
 import type { RequestContext } from "../infrastructure/request-context";
-import type { Content, ContentKind, Category, Platform } from "../domain/types";
+import type { Content, ContentKind, Category, Platform, ContentStatus } from "../domain/types";
 import { plainText } from "../infrastructure/text";
 
 export interface SubmitContentInput {
@@ -17,6 +17,7 @@ export interface SubmitContentInput {
   category?: Category;
   blurb?: string;
   sub?: string;              // context string (year/maker/platform)
+  status?: ContentStatus;
 }
 
 export interface SubmitContentResult {
@@ -116,13 +117,17 @@ export async function submitContent(
     blurb,
     creatorId,
     submittedBy: ctx.session,
-    status: "live",
+    status: input.status || "live",
   });
 
   // 7. audit
   await audit(ctx, "content.submit", "content", content.id, {
     canonicalId, platform, kind, category, url, title, flags: verdict.flags,
   });
+
+  if (input.status === "pending") {
+    return { ok: true, content, flags: verdict.flags };
+  }
 
   // 8. enqueue metric job (background worker will fetch metrics via adapter)
   //    — in this prototype the worker polls; no queue needed.

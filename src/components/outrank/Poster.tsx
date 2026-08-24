@@ -7,12 +7,13 @@ interface Props {
   entity: Pick<Entity, "name" | "poster" | "category" | "kind" | "image" | "link">;
   className?: string;
   variant?: "poster" | "thumb" | "hero";
+  showOverlay?: boolean;
 }
 
 // Poster component: shows the real og:image (from the link the submitter added)
 // when available, falling back to the deterministic generative SVG poster.
 // The og:image is fetched server-side at submit time and stored on the entity.
-function PosterInner({ entity, className = "", variant = "poster" }: Props) {
+function PosterInner({ entity, className = "", variant = "poster", showOverlay = true }: Props) {
   const { name, poster, category, kind, image } = entity;
   const [imgError, setImgError] = useState(false);
   const imageSrc = image?.startsWith("http://") || image?.startsWith("https://")
@@ -130,7 +131,7 @@ function PosterInner({ entity, className = "", variant = "poster" }: Props) {
       )}
 
       {/* overlay typography (always visible, on top of image or SVG) */}
-      <div className="absolute inset-0 flex flex-col justify-between p-4 text-white">
+      {showOverlay && <div className="absolute inset-0 flex flex-col justify-between p-4 text-white">
         <div className="flex items-start justify-between">
           <span className="font-mono text-[10px] tracking-widest opacity-80">{tag}</span>
           <span className="font-mono text-[10px] tracking-widest opacity-80">{category.toUpperCase()}</span>
@@ -141,7 +142,7 @@ function PosterInner({ entity, className = "", variant = "poster" }: Props) {
             {name}
           </div>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

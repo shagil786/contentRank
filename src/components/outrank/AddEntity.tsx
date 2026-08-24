@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/select";
 import { useState, useCallback } from "react";
 import { useUI } from "@/lib/outrank/store";
-import { useRealtime } from "./providers";
 import { CATEGORIES, type Category, type EntityKind, type OgResult } from "@/lib/outrank/types";
 import { detectPlatform } from "@/lib/outrank/platform";
 import { toast } from "sonner";
@@ -63,8 +62,6 @@ function hostOf(url: string): string {
 export function AddEntity() {
   const open = useUI((s) => s.addOpen);
   const setOpen = useUI((s) => s.setAddOpen);
-  const openEntity = useUI((s) => s.openEntity);
-  const { addEntity } = useRealtime();
 
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
@@ -159,47 +156,31 @@ export function AddEntity() {
     setBusy(true);
     try {
       const link = resolvedUrl || url.trim() || undefined;
-      const r = await addEntity({ name, category, kind, sub, blurb, link, image });
-      if (r?.ok && r.entity) {
-        if (Number.isFinite(bidDollars) && bidDollars >= 1) {
-          const bidResponse = await fetch("/api/bids/checkout", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": globalThis.crypto.randomUUID(),
-            },
-            body: JSON.stringify({
-              contentId: r.entity.id,
-              amount: Math.round(bidDollars * 100),
-              currency: "usd",
-              targetRank: r.entity.rank,
-              successUrl: `${window.location.origin}/?bid=success&entityId=${encodeURIComponent(r.entity.id)}&amount=${Math.round(bidDollars * 100)}`,
-              cancelUrl: `${window.location.origin}/?bid=cancel`,
-            }),
-          });
-          const bidResult = await bidResponse.json().catch(() => null) as { checkoutUrl?: string; reason?: string } | null;
-          if (!bidResponse.ok || !bidResult?.checkoutUrl) {
-            toast.error("Added to the board, but checkout could not be started", {
-              description: bidResult?.reason || "You can open the entity and try the bid again.",
-            });
-            setOpen(false);
-            reset();
-            openEntity(r.entity as any);
-            return;
-          }
-          window.location.assign(bidResult.checkoutUrl);
-          return;
-        }
-
-        toast.success(`${r.entity.name} IS ON THE BOARD`, {
-          description: `Ranking #${String(r.entity.rank).padStart(2, "0")} — go defend it.`,
-        });
-        setOpen(false);
-        reset();
-        openEntity(r.entity as any);
-      } else {
-        toast.error(r?.reason || "Could not add");
+      const bidResponse = await fetch("/api/content/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          title: name,
+          category,
+          kind,
+          sub,
+          blurb,
+          url: link,
+          amount: Math.round(bidDollars * 100),
+          currency: "usd",
+          successUrl: `${window.location.origin}/?bid=success&amount=${Math.round(bidDollars * 100)}`,
+          cancelUrl: `${window.location.origin}/?bid=cancel`,
+        }),
+      });
+      const bidResult = await bidResponse.json().catch(() => null) as { checkoutUrl?: string; reason?: string } | null;
+      if (!bidResponse.ok || !bidResult?.checkoutUrl) {
+        toast.error("Checkout could not be started", { description: bidResult?.reason || "Your item was not added." });
+        return;
       }
+      window.location.assign(bidResult.checkoutUrl);
     } finally {
       setBusy(false);
     }

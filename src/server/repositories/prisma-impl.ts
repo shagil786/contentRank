@@ -161,6 +161,10 @@ export const rankingRepo: RankingRepository = {
     const row = await db.sponsoredBid.findUnique({ where: { idempotencyKey: key } });
     return row ? { ...row } as SponsoredBid : null;
   },
+  async findBidByPaymentId(paymentId) {
+    const row = await db.sponsoredBid.findFirst({ where: { paymentId } });
+    return row ? { ...row } as SponsoredBid : null;
+  },
   async updateBidStatus(id, status, paymentId, settledAt) {
     await db.sponsoredBid.update({
       where: { id }, data: { status, paymentId: paymentId ?? undefined, settledAt: settledAt ?? undefined },

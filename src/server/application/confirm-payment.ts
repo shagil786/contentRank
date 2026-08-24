@@ -54,21 +54,13 @@ export async function confirmPayment(
     : "failed";
   await repos.payment.updateStatus(payment.id, newStatus, undefined, payload.event_id);
 
-  // 4. settle the linked bid + update sponsored ranking
-  // find the pending bid linked to this payment
-  const allContents = await repos.content.listAll("live");
-  for (const c of allContents) {
-    const bids = await repos.ranking.activeBidsByContent(c.id);
-    // also check pending bids for this content
-    // (activeBidsByContent returns settled; we need pending too)
+  // 4. settle the linked bid and publish the pending content only after success.
+  const bid = await repos.ranking.findBidByPaymentId(payment.id);
+  if (bid) {
+    const bidStatus = newStatus === "succeeded" ? "settled" : newStatus === "refunded" ? "refunded" : "failed";
+    await repos.ranking.updateBidStatus(bid.id, bidStatus, payment.id, newStatus === "succeeded" ? new Date() : undefined);
+    if (newStatus === "succeeded") await publishPaidContent(bid.contentId, ctx);
   }
-
-  // simpler: scan pending bids — in a real DB this is a query
-  // for the prototype, we find the bid by scanning recent pending bids via the payment link
-  // The create-sponsored-bid service set paymentId on the bid.
-  // We update any bid whose paymentId matches.
-  // Since Prisma SQLite doesn't have a direct "find bid by paymentId" without a relation,
-  // we use a targeted approach: the bid's paymentId field matches.
 
   // 5. audit
   await audit(ctx, "payment.settle", "payment", payment.id, {
@@ -77,6 +69,16 @@ export async function confirmPayment(
   });
 
   return { ok: true, paymentId: payment.id };
+}
+
+async function publishPaidContent(contentId: string, ctx: RequestContext) {
+  const { repos } = container;
+  const content = await repos.content.findById(contentId);
+  if (!content || content.status === "live") return;
+  await repos.content.updateStatus(content.id, "live");
+  await repos.metric.append({ contentId: content.id, source: "outrank", views: 0, likes: 0, comments: 0, shares: 0 });
+  await repos.ranking.appendOrganicSnapshot({ contentId: content.id, category: content.category, rank: 9999, score: 1000, momentum: 0 });
+  await audit(ctx, "content.publish.paid_bid", "content", content.id, { contentId: content.id });
 }
 
 // Called after settlement to recompute sponsored ranking for a content's bids.

@@ -174,7 +174,7 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
           <div className="text-center mt-3 font-mono text-[10px] tracking-widest text-signal">⟶ THIS TAKES #1</div>
         )}
         {defending && (
-          <div className="text-center mt-3 font-mono text-[10px] tracking-widest text-muted-foreground">⟶ DEFENDS #1</div>
+          <div className="text-center mt-3 font-mono text-[10px] tracking-widest text-muted-foreground">⟶ BID HOLDS #1</div>
         )}
         {!takesOne && !defending && newRank === prevRank && projection?.gapToNext && projection.gapToNext > 0 && (
           <div className="text-center mt-3 space-y-1">

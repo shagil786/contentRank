@@ -15,6 +15,8 @@ import type {
 import { DAILY_HYPE } from "../../src/lib/outrank/types";
 import { SEED_LOCATIONS } from "./seed";
 
+const API_BASE_URL = (process.env.API_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+
 // ---------------- HYDRATION FROM POSTGRESQL ----------------
 // PostgreSQL is the source of truth. On boot we hydrate the in-memory cache
 // (Redis-equivalent) from PostgreSQL via the Next.js app's leaderboard API.
@@ -27,7 +29,7 @@ async function hydrateFromPostgres(): Promise<Entity[]> {
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 3000);
-      const res = await fetch("http://localhost:3000/api/leaderboard", {
+      const res = await fetch(`${API_BASE_URL}/api/leaderboard`, {
         signal: ctrl.signal,
         cache: "no-store",
       });
@@ -197,7 +199,7 @@ function applyBoost(req: BoostRequest, socketId: string, isSim = false): { ok: b
   if (!isSim) {
     const sessionId = ledgers.get(socketId)?.sessionId;
     if (sessionId) {
-      fetch("http://localhost:3000/api/boosts", {
+      fetch(`${API_BASE_URL}/api/boosts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -315,7 +317,7 @@ async function addEntity(req: AddEntityRequest, socketId: string): Promise<{ ok:
 
   // 1. persist to PostgreSQL via the application layer
   try {
-    const apiRes = await fetch("http://localhost:3000/api/content", {
+    const apiRes = await fetch(`${API_BASE_URL}/api/content`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -515,7 +517,7 @@ io.on("connection", (socket) => {
   ledgers.set(socket.id, { handle, location, sessionId: undefined });
 
   // create a PostgreSQL session via the application layer (best-effort, no auth)
-  fetch("http://localhost:3000/api/session", {
+  fetch(`${API_BASE_URL}/api/session`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ handle, location }),
@@ -529,7 +531,12 @@ io.on("connection", (socket) => {
   socket.emit("snapshot", { type: "snapshot", state: snapshot() } as const);
   io.emit("presence.updated", { type: "presence.updated", count: presence, fighting } as const);
 
-  socket.on("state.sync", (req: { since?: number }, ackFn?: (r: any) => void) => {
+  socket.on("state.sync", async (req: { since?: number }, ackFn?: (r: any) => void) => {
+    const refreshed = await hydrateFromPostgres();
+    if (refreshed.length > 0) {
+      entities = refreshed;
+      recomputeAllRanks();
+    }
     const since = Number.isFinite(req?.since) ? Math.max(0, Number(req.since)) : 0;
     const missedActivity = activity.filter((event) => event.ts > since).slice(0, 60);
     ackFn?.({ type: "state.sync", state: snapshot(), missedActivity });

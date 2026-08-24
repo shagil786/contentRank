@@ -166,7 +166,7 @@ export function LeaderboardRow({ entity, index, onBoost, lastUpdateTs }: Props) 
             <span className={`font-mono text-[10px] ${isTop ? "text-paper/60" : "text-muted-foreground"}`}>BACKED</span>
           </div>
           <div className={`font-mono text-[9px] sm:text-[10px] tracking-widest mt-0.5 ${isTop ? "text-signal" : "text-muted-foreground"}`}>
-            {isTop ? "DEFEND" : entity.localRank <= 4 ? "TAKE #" + String(entity.localRank - 1).padStart(2, "0") : "BOOST"}
+            {isTop ? "BID TO HOLD" : entity.localRank <= 4 ? "BID TO TAKE #" + String(entity.localRank - 1).padStart(2, "0") : "PLACE BID"}
           </div>
         </div>
 

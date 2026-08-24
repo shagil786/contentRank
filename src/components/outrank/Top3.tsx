@@ -127,7 +127,7 @@ function TopOne({ entity, onBoost }: { entity: DisplayEntity; onBoost: (e: Entit
               }}
               className="px-4 sm:px-6 py-2.5 bg-signal text-white font-mono text-[11px] sm:text-xs tracking-widest hover:bg-signal-dim transition-colors border border-signal"
             >
-              DEFEND #1 →
+              BID TO HOLD #1 →
             </button>
           </div>
         </div>
