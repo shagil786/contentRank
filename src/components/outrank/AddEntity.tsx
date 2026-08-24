@@ -176,12 +176,23 @@ export function AddEntity() {
           cancelUrl: `${window.location.origin}/?bid=cancel`,
         }),
       });
-      const bidResult = await bidResponse.json().catch(() => null) as { checkoutUrl?: string; reason?: string } | null;
+      const bidResult = await bidResponse.json().catch(() => null) as {
+        checkoutUrl?: string;
+        reason?: string;
+        errors?: { fieldErrors?: Record<string, string[]> };
+      } | null;
       if (!bidResponse.ok || !bidResult?.checkoutUrl) {
+        const validationFields = bidResult?.reason === "validation"
+          ? Object.entries(bidResult.errors?.fieldErrors || {})
+              .flatMap(([field, messages]) => messages.map((message) => `${field}: ${message}`))
+              .join(" · ")
+          : "";
         const reason = bidResult?.reason === "csrf_failed"
           ? "Please refresh the page and try again."
           : bidResult?.reason === "api_unreachable"
           ? "The board is temporarily unavailable. Please try again."
+          : validationFields || bidResult?.reason === "dodo_auth_failed"
+          ? validationFields || "Payment test credentials were rejected."
           : "Your item was not added.";
         toast.error("Checkout could not be started", { description: reason });
         return;
