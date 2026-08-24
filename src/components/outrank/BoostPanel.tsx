@@ -15,6 +15,7 @@ import { formatScore, formatUsd } from "@/lib/outrank/types";
 import { RankNumber } from "./RankNumber";
 import { ScoreCounter } from "./ScoreCounter";
 import { Poster } from "./Poster";
+import { useUI } from "@/lib/outrank/store";
 import { useRealtime } from "./providers";
 import { toast } from "sonner";
 
