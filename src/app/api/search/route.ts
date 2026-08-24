@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const data = await res.json();
     const ents: any[] = data.entities || [];
     const results = ents
-      .filter((e) => e.name.toLowerCase().includes(q) || e.sub.toLowerCase().includes(q) || e.category.includes(q) || e.kind.includes(q))
+      .filter((e) => e.name.toLowerCase().includes(q))
       .slice(0, 12)
       .map((e) => ({
         id: e.id,

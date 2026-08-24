@@ -62,7 +62,7 @@ export function GlobalSearch() {
   return (
     <CommandDialog open={open} onOpenChange={handleOpenChange} className="bg-paper text-ink border-ink">
       <CommandInput
-        placeholder="SEARCH THE BOARD — MOVIES, SHOWS, GAMES, AI, CREATORS…"
+        placeholder="SEARCH BY NAME…"
         value={q}
         onValueChange={setQ}
         className="font-mono"
