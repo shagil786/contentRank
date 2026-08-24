@@ -188,7 +188,7 @@ export function AddEntity() {
               amount: Math.round(bidDollars * 100),
               currency: "usd",
               targetRank: r.entity.rank,
-              successUrl: `${window.location.origin}/?bid=success`,
+              successUrl: `${window.location.origin}/?bid=success&entityId=${encodeURIComponent(r.entity.id)}&amount=${Math.round(bidDollars * 100)}`,
               cancelUrl: `${window.location.origin}/?bid=cancel`,
             }),
           });

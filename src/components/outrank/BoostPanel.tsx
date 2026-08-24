@@ -75,7 +75,6 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
   const [projection, setProjection] = useState<Projection | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sponsoring, setSponsoring] = useState(false);
-  const [committed, setCommitted] = useState(false); // shows the post-bid track prompt
 
   // custom is entered in DOLLARS; convert to cents internally. Max $1B (anti-abuse).
   const customCents = custom ? Math.max(0, Math.min(parseFloat(custom || "0") || 0, 1_000_000_000) * 100) : 0;
@@ -117,7 +116,8 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
     });
     setTimeout(() => {
       setSubmitting(false);
-      setCommitted(true); // show the post-bid track prompt instead of closing
+      useUI.getState().openPostBid(target, effAmount);
+      close();
     }, 650);
   }, [target, effAmount, boost, projection]);
 
@@ -157,50 +157,6 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
 
   const takesOne = newRank === 1 && prevRank !== 1;
   const defending = newRank === 1 && prevRank === 1;
-
-  if (committed) {
-    // post-bid: show the track + claim prompt (only after the bid is added)
-    return (
-      <div className="px-4 sm:px-6 pb-6">
-        <div className="py-8 text-center">
-          <div className="font-mono text-[10px] tracking-widest text-up mb-3">✓ BID PLACED</div>
-          <div className="font-display tracking-tighter2 text-2xl sm:text-3xl leading-[0.9] mb-2">
-            {target.name}
-          </div>
-          <div className="font-mono text-xs text-muted-foreground mb-6">
-            {formatUsd(effAmount)} BACKED
-          </div>
-          <div className="font-mono text-[10px] tracking-widest text-muted-foreground mb-4">
-            WANT TO KNOW WHEN IT MOVES?
-          </div>
-          <button
-            onClick={() => {
-              useUI.getState().openSubscribeEntity(target);
-              close();
-            }}
-            className="w-full py-3.5 bg-signal text-white font-mono text-[11px] tracking-widest hover:bg-signal-dim transition-colors mb-2"
-          >
-            TRACK {target.name} →
-          </button>
-          <button
-            onClick={() => {
-              useUI.getState().openClaim(target);
-              close();
-            }}
-            className="w-full py-3 font-mono text-[11px] tracking-widest border border-ink/30 hover:bg-ink hover:text-paper transition-colors mb-2"
-          >
-            CLAIM THIS ENTITY →
-          </button>
-          <button
-            onClick={close}
-            className="w-full py-3 font-mono text-[10px] tracking-widest border border-ink/20 text-muted-foreground hover:bg-ink hover:text-paper transition-colors"
-          >
-            NO THANKS
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="px-4 sm:px-6 pb-6">

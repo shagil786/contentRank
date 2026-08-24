@@ -36,6 +36,10 @@ interface UIState {
   openClaim: (e: Entity) => void;
   closeClaim: () => void;
 
+  postBidTarget: { entity: Entity; amount: number } | null;
+  openPostBid: (entity: Entity, amount: number) => void;
+  closePostBid: () => void;
+
   editTarget: Entity | null;
   openEdit: (e: Entity) => void;
   closeEdit: () => void;
@@ -85,6 +89,10 @@ export const useUI = create<UIState>((set) => ({
   claimTarget: null,
   openClaim: (e) => set({ claimTarget: e }),
   closeClaim: () => set({ claimTarget: null }),
+
+  postBidTarget: null,
+  openPostBid: (entity, amount) => set({ postBidTarget: { entity, amount } }),
+  closePostBid: () => set({ postBidTarget: null }),
 
   editTarget: null,
   openEdit: (e) => set({ editTarget: e }),

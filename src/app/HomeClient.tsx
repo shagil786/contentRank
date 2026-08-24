@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useRealtime, useLeaderboard } from "@/components/outrank/providers";
 import { useUI } from "@/lib/outrank/store";
 import type { LeaderState, Category } from "@/lib/outrank/types";
@@ -21,6 +21,7 @@ import { OneCelebration } from "@/components/outrank/OneCelebration";
 import { BidCelebration } from "@/components/outrank/BidCelebration";
 import { SubscribeDialog } from "@/components/outrank/SubscribeDialog";
 import { EntityClaim } from "@/components/outrank/EntityClaim";
+import { PostBidPrompt } from "@/components/outrank/PostBidPrompt";
 import { ShareCard } from "@/components/outrank/ShareCard";
 import { EditEntity } from "@/components/outrank/EditEntity";
 import { MobileNav } from "@/components/outrank/MobileNav";
@@ -38,6 +39,16 @@ export default function HomeClient({ initialData }: { initialData: LeaderState }
   const tab = useUI((s) => s.tab);
   const selected = useUI((s) => s.selected);
   const entities = rt.entities.length ? rt.entities : data?.entities ?? [];
+  const openedReturnPrompt = useRef(false);
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const entityId = searchParams.get("entityId");
+    if (searchParams.get("bid") !== "success" || !entityId || openedReturnPrompt.current) return;
+    const entity = entities.find((item) => item.id === entityId);
+    if (!entity) return;
+    openedReturnPrompt.current = true;
+    useUI.getState().openPostBid(entity, Number(searchParams.get("amount")) || 100);
+  }, [entities, searchParams]);
   const activity = rt.activity.length ? rt.activity : data?.activity ?? [];
   const presence = rt.presence || data?.presence || 0;
   const fighting = rt.fighting || 0;
@@ -64,7 +75,7 @@ export default function HomeClient({ initialData }: { initialData: LeaderState }
         {tab === "profile" && <div className="sm:hidden flex-1"><ProfilePanel /></div>}
       </div>
       <ExperimentalFooter /><div className="sm:hidden h-14" />
-      <BoostPanel /><EntityDetail entity={selected} allEntities={entities} /><GlobalSearch /><BattleMode /><AddEntity /><SubscribeDialog /><EntityClaim /><ShareCard /><EditEntity />
+      <BoostPanel /><PostBidPrompt /><EntityDetail entity={selected} allEntities={entities} /><GlobalSearch /><BattleMode /><AddEntity /><SubscribeDialog /><EntityClaim /><ShareCard /><EditEntity />
       <OneCelebration event={rt.oneEvent} /><BidCelebration event={rt.bidCelebration} /><MobileNav />
     </main>
   );
