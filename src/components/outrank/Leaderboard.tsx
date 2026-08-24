@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import type { Entity, Category } from "@/lib/outrank/types";
 import { useUI } from "@/lib/outrank/store";
 import { LeaderboardRow } from "./LeaderboardRow";
@@ -14,6 +14,9 @@ interface Props {
   loading: boolean;
   onBoost: (e: Entity) => void;
   lastUpdate?: { entityId: string; ts: number } | null;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 export interface DisplayEntity extends Entity {
@@ -22,7 +25,8 @@ export interface DisplayEntity extends Entity {
   isCategoryView: boolean;
 }
 
-export function Leaderboard({ entities, category, loading, onBoost, lastUpdate }: Props) {
+export function Leaderboard({ entities, category, loading, onBoost, lastUpdate, hasMore = false, loadingMore = false, onLoadMore }: Props) {
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   const list = useMemo(() => {
     const filtered = category === "global" ? entities : entities.filter((e) => e.category === category);
     const sorted = [...filtered].sort((a, b) => b.score - a.score || a.createdAt - b.createdAt);
@@ -36,7 +40,17 @@ export function Leaderboard({ entities, category, loading, onBoost, lastUpdate }
   }, [entities, category]);
 
   const top3 = list.slice(0, 3);
-  const rest = list.slice(3, 48);
+  const rest = list.slice(3);
+
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !hasMore || !onLoadMore) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !loadingMore) onLoadMore();
+    }, { rootMargin: "800px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, onLoadMore]);
 
   return (
     <div className="w-full">
@@ -73,7 +87,7 @@ export function Leaderboard({ entities, category, loading, onBoost, lastUpdate }
                         <span className="font-mono text-[9px] tracking-widest text-muted-foreground">
                           {rank === 10 ? "10 · TOP TEN" : "25 · CONTENDERS"}
                         </span>
-                        <span className="font-mono text-[9px] tracking-widest text-muted-foreground">SCROLL TO DEFEND</span>
+                        <span className="font-mono text-[9px] tracking-widest text-muted-foreground">SCROLL FOR MORE</span>
                       </div>
                     )}
                     <LeaderboardRow
@@ -89,6 +103,12 @@ export function Leaderboard({ entities, category, loading, onBoost, lastUpdate }
           )}
         </AnimatePresence>
       </LayoutGroup>
+
+      {hasMore && (
+        <div ref={loadMoreRef} className="py-8 text-center font-mono text-[9px] tracking-widest text-muted-foreground">
+          {loadingMore ? "LOADING MORE…" : "KEEP SCROLLING FOR MORE"}
+        </div>
+      )}
 
       {list.length === 0 && !loading && (
         <div className="px-5 py-20 text-center">

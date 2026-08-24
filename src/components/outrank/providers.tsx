@@ -1,6 +1,6 @@
 "use client";
 
-import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReactNode, useState, useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import type {
@@ -11,7 +11,7 @@ import type {
   ActivityEvent,
 } from "@/lib/outrank/types";
 
-export { useQuery, useMutation, useQueryClient, QueryClient };
+export { useQuery, useInfiniteQuery, useMutation, useQueryClient, QueryClient };
 
 export function QueryProvider({ children }: { children: ReactNode }) {
   const [qc] = useState(
@@ -48,15 +48,16 @@ export function getSocket(): Socket {
 
 // ---------------- Hooks ----------------
 export function useLeaderboard(initialData?: LeaderState) {
-  return useQuery<LeaderState>({
+  return useInfiniteQuery<LeaderState>({
     queryKey: ["leaderboard"],
-    queryFn: async () => {
-      const r = await fetch("/api/leaderboard?limit=48", { cache: "no-store" });
+    queryFn: async ({ pageParam }) => {
+      const r = await fetch(`/api/leaderboard?limit=48&cursor=${pageParam as number}`, { cache: "no-store" });
       if (!r.ok) throw new Error("fetch_failed");
       return r.json();
     },
-    initialData,
-    initialDataUpdatedAt: initialData?.ts,
+    initialPageParam: 0,
+    initialData: initialData ? { pages: [initialData], pageParams: [0] } : undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ? Number(lastPage.nextCursor) : undefined,
     staleTime: 1000,
   });
 }

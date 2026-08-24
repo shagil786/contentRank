@@ -32,13 +32,18 @@ import { ProfilePanel } from "@/components/outrank/ProfilePanel";
 import { ErrorBoundary } from "@/components/outrank/ErrorBoundary";
 
 export default function HomeClient({ initialData }: { initialData: LeaderState }) {
-  const { data } = useLeaderboard(initialData);
+  const { data, hasNextPage, isFetchingNextPage, fetchNextPage } = useLeaderboard(initialData);
   const rt = useRealtime();
   const category = useUI((s) => s.category);
   const openBoost = useUI((s) => s.openBoost);
   const tab = useUI((s) => s.tab);
   const selected = useUI((s) => s.selected);
-  const entities = rt.entities.length ? rt.entities : data?.entities ?? [];
+  const apiEntities = data?.pages.flatMap((page) => page.entities) ?? [];
+  const entities = useMemo(() => {
+    const byId = new Map(apiEntities.map((entity) => [entity.id, entity]));
+    for (const entity of rt.entities) byId.set(entity.id, entity);
+    return Array.from(byId.values());
+  }, [apiEntities, rt.entities]);
   const openedReturnPrompt = useRef(false);
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -48,9 +53,10 @@ export default function HomeClient({ initialData }: { initialData: LeaderState }
     if (!entity) return;
     openedReturnPrompt.current = true;
     useUI.getState().openPostBid(entity, Number(searchParams.get("amount")) || 100);
-  }, [entities, searchParams]);
-  const activity = rt.activity.length ? rt.activity : data?.activity ?? [];
-  const presence = rt.presence || data?.presence || 0;
+  }, [entities]);
+  const firstPage = data?.pages[0];
+  const activity = rt.activity.length ? rt.activity : firstPage?.activity ?? [];
+  const presence = rt.presence || firstPage?.presence || 0;
   const fighting = rt.fighting || 0;
   const loading = !entities.length;
   const lastUpdate = rt.lastRankUpdate ? { entityId: rt.lastRankUpdate.entityId, ts: rt.lastRankUpdate.ts } : null;
@@ -67,7 +73,7 @@ export default function HomeClient({ initialData }: { initialData: LeaderState }
       <div className="flex-1 flex flex-col">
         {tab === "board" && <>
           <CategoryNavigation counts={counts} /><LiveTicker activity={activity} presence={presence} fighting={fighting} />
-          <section className="flex-1"><div className="max-w-[1400px] mx-auto"><ErrorBoundary><Leaderboard entities={entities} category={category} loading={loading} onBoost={openBoost} lastUpdate={lastUpdate} /></ErrorBoundary></div></section>
+          <section className="flex-1"><div className="max-w-[1400px] mx-auto"><ErrorBoundary><Leaderboard entities={entities} category={category} loading={loading} onBoost={openBoost} lastUpdate={lastUpdate} hasMore={hasNextPage} loadingMore={isFetchingNextPage} onLoadMore={() => fetchNextPage()} /></ErrorBoundary></div></section>
           <InternetInMotion /><TrendingMomentum /><ScrollStorytelling />
         </>}
         {tab === "trending" && <div className="sm:hidden flex-1"><TrendingMomentum /></div>}
