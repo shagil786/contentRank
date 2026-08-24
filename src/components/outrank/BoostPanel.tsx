@@ -111,6 +111,7 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
           amount: effAmount,
           currency: "usd",
           targetRank: newRank,
+          testMode: new URLSearchParams(window.location.search).has("test"),
           successUrl: `${window.location.origin}/?bid=success&entityId=${encodeURIComponent(target.id)}&amount=${effAmount}`,
           cancelUrl: `${window.location.origin}/?bid=cancel`,
         }),

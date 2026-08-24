@@ -30,6 +30,7 @@ export const sponsoredBidSchema = z.object({
   targetRank: z.number().int().min(1).optional(),
   successUrl: z.string().url().optional(),
   cancelUrl: z.string().url().optional(),
+  testMode: z.boolean().optional(),
 });
 
 export const paidContentCheckoutSchema = z.object({
@@ -43,6 +44,7 @@ export const paidContentCheckoutSchema = z.object({
   currency: z.string().max(3).optional(),
   successUrl: z.string().url().optional(),
   cancelUrl: z.string().url().optional(),
+  testMode: z.boolean().optional(),
 });
 
 export const reportContentSchema = z.object({

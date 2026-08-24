@@ -16,6 +16,7 @@ export interface CreateBidInput {
   successUrl?: string;
   cancelUrl?: string;
   idempotencyKey?: string;
+  testMode?: boolean;
 }
 
 export interface CreateBidResult {
@@ -75,6 +76,7 @@ export async function createSponsoredBid(
     successUrl: input.successUrl || "/?bid=success",
     cancelUrl: input.cancelUrl || "/?bid=cancel",
     description: `OUTRANK sponsored bid — ${content.title}`,
+    mode: input.testMode ? "test" : "live",
   });
 
   // link bid → payment

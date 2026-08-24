@@ -25,7 +25,11 @@ export async function POST(req: NextRequest) {
   }
 
   const clientKey = req.headers.get("idempotency-key")?.trim();
-  const result = await withIdempotency(req, () => createSponsoredBid({ ...parsed.data, idempotencyKey: clientKey }, ctx));
+  const result = await withIdempotency(req, () => createSponsoredBid({
+    ...parsed.data,
+    idempotencyKey: clientKey,
+    testMode: parsed.data.testMode === true && process.env.PAYMENT_TEST_MODE_ENABLED === "true",
+  }, ctx));
   if ("error" in result) return result.error;
 
   return jsonResponse(result.value, result.value.ok ? 200 : 400, { requestId: ctx.requestId, sessionId: ctx.session });

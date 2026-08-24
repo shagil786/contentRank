@@ -14,17 +14,29 @@ import type {
 import { paymentRepo } from "../../repositories/prisma-impl";
 
 const DODO_SECRET = process.env.DODO_WEBHOOK_SECRET || "";
-
-const DODO_API_KEY = process.env.DODO_PAYMENTS_API_KEY || "";
-const DODO_PRODUCT_ID = process.env.DODO_PRODUCT_ID || "";
-const DODO_API_BASE = process.env.DODO_API_BASE_URL || "https://test.dodopayments.com";
+const DODO_TEST_SECRET = process.env.DODO_TEST_WEBHOOK_SECRET || "";
 
 export const dodoProvider: PaymentProvider = {
   name: "dodo",
 
   async createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult> {
+    const testMode = input.mode === "test";
+    if (testMode && process.env.PAYMENT_TEST_MODE_ENABLED !== "true") {
+      throw new Error("Dodo payment test mode is disabled");
+    }
+    const DODO_API_KEY = testMode
+      ? process.env.DODO_TEST_PAYMENTS_API_KEY || ""
+      : process.env.DODO_PAYMENTS_API_KEY || "";
+    const DODO_PRODUCT_ID = testMode
+      ? process.env.DODO_TEST_PRODUCT_ID || ""
+      : process.env.DODO_PRODUCT_ID || "";
+    const DODO_API_BASE = testMode
+      ? process.env.DODO_TEST_API_BASE_URL || "https://test.dodopayments.com"
+      : process.env.DODO_API_BASE_URL || "https://live.dodopayments.com";
     if (!DODO_API_KEY || !DODO_PRODUCT_ID) {
-      throw new Error("Dodo checkout is not configured: set DODO_PAYMENTS_API_KEY and DODO_PRODUCT_ID");
+      throw new Error(testMode
+        ? "Dodo test checkout is not configured: set DODO_TEST_PAYMENTS_API_KEY and DODO_TEST_PRODUCT_ID"
+        : "Dodo checkout is not configured: set DODO_PAYMENTS_API_KEY and DODO_PRODUCT_ID");
     }
 
     // create an internal payment record (source of truth)
@@ -74,25 +86,24 @@ export const dodoProvider: PaymentProvider = {
       return { ok: false, payload: null, reason: "missing_signature" };
     }
 
-    const secretValue = DODO_SECRET.replace(/^whsec_/, "");
-    const secretKey = Buffer.from(secretValue, "base64");
-    const standardSignature = headers.id && headers.timestamp && headers.signature
-      ? createHmac("sha256", secretKey).update(`${headers.id}.${headers.timestamp}.${rawBody}`).digest()
-      : null;
-    const standardValid = standardSignature && headers.signature
-      ? headers.signature.split(" ").some((part) => {
-          const supplied = part.replace(/^v1,/, "");
-          const suppliedBuffer = Buffer.from(supplied, "base64");
-          return suppliedBuffer.length === standardSignature.length && timingSafeEqual(suppliedBuffer, standardSignature);
-        })
-      : false;
-
     const legacySignature = headers.legacySignature?.trim().replace(/^sha256=/i, "");
-    const legacyExpected = legacySignature ? createHmac("sha256", DODO_SECRET).update(rawBody).digest() : null;
-    const legacyBuffer = legacySignature
-      ? (/^[0-9a-f]{64}$/i.test(legacySignature) ? Buffer.from(legacySignature, "hex") : Buffer.from(legacySignature, "base64"))
-      : null;
-    const legacyValid = legacyExpected && legacyBuffer && legacyBuffer.length === legacyExpected.length && timingSafeEqual(legacyBuffer, legacyExpected);
+    const standardValid = [DODO_SECRET, DODO_TEST_SECRET].filter(Boolean).some((secret) => {
+      const secretValue = secret.replace(/^whsec_/, "");
+      const secretKey = Buffer.from(secretValue, "base64");
+      const expected = headers.id && headers.timestamp && headers.signature
+        ? createHmac("sha256", secretKey).update(`${headers.id}.${headers.timestamp}.${rawBody}`).digest()
+        : null;
+      return Boolean(expected && headers.signature && headers.signature.split(" ").some((part) => {
+        const suppliedBuffer = Buffer.from(part.replace(/^v1,/, ""), "base64");
+        return suppliedBuffer.length === expected.length && timingSafeEqual(suppliedBuffer, expected);
+      }));
+    });
+    const legacyValid = [DODO_SECRET, DODO_TEST_SECRET].filter(Boolean).some((secret) => {
+      if (!legacySignature) return false;
+      const expected = createHmac("sha256", secret).update(rawBody).digest();
+      const supplied = /^[0-9a-f]{64}$/i.test(legacySignature) ? Buffer.from(legacySignature, "hex") : Buffer.from(legacySignature, "base64");
+      return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+    });
 
     if (!standardValid && !legacyValid) {
       return { ok: false, payload: null, reason: "bad_signature" };

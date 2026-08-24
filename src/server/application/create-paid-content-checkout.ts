@@ -15,6 +15,7 @@ export interface CreatePaidContentCheckoutInput {
   successUrl?: string;
   cancelUrl?: string;
   idempotencyKey?: string;
+  testMode?: boolean;
 }
 
 export async function createPaidContentCheckout(input: CreatePaidContentCheckoutInput, ctx: RequestContext) {
@@ -39,6 +40,7 @@ export async function createPaidContentCheckout(input: CreatePaidContentCheckout
     successUrl,
     cancelUrl: input.cancelUrl,
     idempotencyKey: input.idempotencyKey,
+    testMode: input.testMode,
   }, ctx);
   return { ...bid, contentId: contentResult.content.id };
 }

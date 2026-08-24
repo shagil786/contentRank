@@ -10,6 +10,7 @@ export interface CreateCheckoutInput {
   successUrl: string;
   cancelUrl: string;
   description: string;
+  mode?: "live" | "test";
 }
 
 export interface CreateCheckoutResult {

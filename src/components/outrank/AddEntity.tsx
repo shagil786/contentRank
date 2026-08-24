@@ -171,6 +171,7 @@ export function AddEntity() {
           url: link,
           amount: Math.round(bidDollars * 100),
           currency: "usd",
+          testMode: new URLSearchParams(window.location.search).has("test"),
           successUrl: `${window.location.origin}/?bid=success&amount=${Math.round(bidDollars * 100)}`,
           cancelUrl: `${window.location.origin}/?bid=cancel`,
         }),
