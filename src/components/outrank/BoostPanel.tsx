@@ -74,6 +74,7 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
   const [custom, setCustom] = useState("");
   const [projection, setProjection] = useState<Projection | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [sponsoring, setSponsoring] = useState(false);
   const [committed, setCommitted] = useState(false); // shows the post-bid track prompt
 
   // custom is entered in DOLLARS; convert to cents internally. Max $1B (anti-abuse).
@@ -122,6 +123,38 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
 
   const newRank = projection?.newRank ?? target.rank;
   const prevRank = target.rank;
+
+  const onSponsor = useCallback(async () => {
+    if (effAmount < 100 || sponsoring) return;
+    setSponsoring(true);
+    try {
+      const response = await fetch("/api/bids/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          contentId: target.id,
+          amount: effAmount,
+          currency: "usd",
+          targetRank: newRank,
+          successUrl: `${window.location.origin}/?bid=success`,
+          cancelUrl: `${window.location.origin}/?bid=cancel`,
+        }),
+      });
+      const result = await response.json().catch(() => null) as { checkoutUrl?: string; reason?: string } | null;
+      if (!response.ok || !result?.checkoutUrl) {
+        throw new Error(result?.reason || "checkout_unavailable");
+      }
+      window.location.assign(result.checkoutUrl);
+    } catch (error) {
+      console.error("Dodo checkout failed", error);
+      toast.error("Checkout could not be started", { description: "Your boost was not charged." });
+      setSponsoring(false);
+    }
+  }, [effAmount, newRank, sponsoring, target.id]);
+
   const takesOne = newRank === 1 && prevRank !== 1;
   const defending = newRank === 1 && prevRank === 1;
 
@@ -267,7 +300,7 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
         </div>
       </div>
 
-      {/* commit */}
+      {/* free organic boost */}
       <button
         onClick={onCommit}
         disabled={submitting || effAmount < 100}
@@ -277,8 +310,15 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
       >
         {submitting ? "PROCESSING…" : takesOne ? `TAKE #1 · ${formatUsd(effAmount)} →` : defending ? `DEFEND #1 · ${formatUsd(effAmount)} →` : `BOOST ${formatUsd(effAmount)} →`}
       </button>
+      <button
+        onClick={onSponsor}
+        disabled={sponsoring || submitting || effAmount < 100}
+        className="w-full mt-2 py-3 border border-signal text-signal font-mono text-[11px] tracking-widest hover:bg-signal hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        {sponsoring ? "OPENING CHECKOUT…" : `SPONSOR WITH DODO · ${formatUsd(effAmount)} →`}
+      </button>
       <div className="text-center mt-2 font-mono text-[9px] tracking-widest text-muted-foreground">
-        PAYMENT VIA DODO · NO DAILY LIMIT · MAX $1B PER BID · EVERY DOLLAR MOVES YOU UP
+        FREE BOOST IS INSTANT · SPONSORING OPENS SECURE DODO CHECKOUT
       </div>
     </div>
   );
