@@ -13,9 +13,15 @@ export async function POST(req: NextRequest) {
   const { ctx } = prepared;
 
   const rawBody = await req.text();
-  const signature = req.headers.get("x-dodo-signature");
-
-  const result = await confirmPayment({ rawBody, signature }, ctx);
+  const result = await confirmPayment({
+    rawBody,
+    headers: {
+      id: req.headers.get("webhook-id"),
+      signature: req.headers.get("webhook-signature"),
+      timestamp: req.headers.get("webhook-timestamp"),
+      legacySignature: req.headers.get("x-dodo-signature"),
+    },
+  }, ctx);
 
   const status = result.ok
     ? 200

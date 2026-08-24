@@ -33,8 +33,16 @@ export interface WebhookVerification {
   reason?: string;
 }
 
+export interface WebhookSignatureHeaders {
+  id: string | null;
+  signature: string | null;
+  timestamp: string | null;
+  /** Legacy header retained for compatibility with earlier test deliveries. */
+  legacySignature: string | null;
+}
+
 export interface PaymentProvider {
   readonly name: "dodo" | "stripe" | "stub";
   createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult>;
-  verifyWebhook(rawBody: string, signature: string | null): Promise<WebhookVerification>;
+  verifyWebhook(rawBody: string, headers: WebhookSignatureHeaders): Promise<WebhookVerification>;
 }

@@ -9,6 +9,7 @@ import type {
   CreateCheckoutResult,
   WebhookVerification,
   WebhookPayload,
+  WebhookSignatureHeaders,
 } from "./interface";
 import { paymentRepo } from "../../repositories/prisma-impl";
 
@@ -65,19 +66,35 @@ export const dodoProvider: PaymentProvider = {
     };
   },
 
-  async verifyWebhook(rawBody: string, signature: string | null): Promise<WebhookVerification> {
+  async verifyWebhook(rawBody: string, headers: WebhookSignatureHeaders): Promise<WebhookVerification> {
     if (!DODO_SECRET) {
       return { ok: false, payload: null, reason: "webhook_secret_not_configured" };
     }
-    if (!signature) {
+    if (!headers.signature && !headers.legacySignature) {
       return { ok: false, payload: null, reason: "missing_signature" };
     }
-    const supplied = signature.trim().replace(/^sha256=/i, "");
-    const expected = createHmac("sha256", DODO_SECRET).update(rawBody).digest();
-    const suppliedBuffer = /^[0-9a-f]{64}$/i.test(supplied)
-      ? Buffer.from(supplied, "hex")
-      : Buffer.from(supplied, "base64");
-    if (suppliedBuffer.length !== expected.length || !timingSafeEqual(suppliedBuffer, expected)) {
+
+    const secretValue = DODO_SECRET.replace(/^whsec_/, "");
+    const secretKey = Buffer.from(secretValue, "base64");
+    const standardSignature = headers.id && headers.timestamp && headers.signature
+      ? createHmac("sha256", secretKey).update(`${headers.id}.${headers.timestamp}.${rawBody}`).digest()
+      : null;
+    const standardValid = standardSignature && headers.signature
+      ? headers.signature.split(" ").some((part) => {
+          const supplied = part.replace(/^v1,/, "");
+          const suppliedBuffer = Buffer.from(supplied, "base64");
+          return suppliedBuffer.length === standardSignature.length && timingSafeEqual(suppliedBuffer, standardSignature);
+        })
+      : false;
+
+    const legacySignature = headers.legacySignature?.trim().replace(/^sha256=/i, "");
+    const legacyExpected = legacySignature ? createHmac("sha256", DODO_SECRET).update(rawBody).digest() : null;
+    const legacyBuffer = legacySignature
+      ? (/^[0-9a-f]{64}$/i.test(legacySignature) ? Buffer.from(legacySignature, "hex") : Buffer.from(legacySignature, "base64"))
+      : null;
+    const legacyValid = legacyExpected && legacyBuffer && legacyBuffer.length === legacyExpected.length && timingSafeEqual(legacyBuffer, legacyExpected);
+
+    if (!standardValid && !legacyValid) {
       return { ok: false, payload: null, reason: "bad_signature" };
     }
 
@@ -88,11 +105,14 @@ export const dodoProvider: PaymentProvider = {
       return { ok: false, payload: null, reason: "bad_json" };
     }
 
-    const providerPaymentId = String(parsed.providerPaymentId || parsed.payment_id || "");
-    const event_id = String(parsed.event_id || parsed.id || randomUUID());
-    const status = String(parsed.status || "succeeded") as WebhookPayload["status"];
-    const amount = Number(parsed.amount || 0);
-    const currency = String(parsed.currency || "usd");
+    const data = (parsed.data && typeof parsed.data === "object" ? parsed.data : parsed) as Record<string, unknown>;
+    const eventType = String(parsed.type || parsed.event_type || "").toLowerCase();
+    const providerPaymentId = String(data.payment_id || data.paymentId || parsed.providerPaymentId || parsed.payment_id || "");
+    const event_id = String(headers.id || parsed.event_id || parsed.id || randomUUID());
+    const rawStatus = String(data.status || parsed.status || eventType.split(".").pop() || "succeeded").toLowerCase();
+    const status = (rawStatus === "success" || rawStatus === "succeeded" ? "succeeded" : rawStatus === "refunded" ? "refunded" : "failed") as WebhookPayload["status"];
+    const amount = Number(data.total_amount || data.amount || parsed.amount || 0);
+    const currency = String(data.currency || parsed.currency || "usd");
 
     if (!providerPaymentId) {
       return { ok: false, payload: null, reason: "no_payment_id" };

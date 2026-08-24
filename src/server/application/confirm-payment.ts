@@ -7,10 +7,11 @@ import { container } from "./container";
 import { audit } from "../infrastructure/request-context";
 import type { RequestContext } from "../infrastructure/request-context";
 import { computeSponsoredRanking } from "../domain/ranking/sponsored";
+import type { WebhookSignatureHeaders } from "../adapters/payments/interface";
 
 export interface ConfirmPaymentInput {
   rawBody: string;
-  signature: string | null;
+  headers: WebhookSignatureHeaders;
 }
 
 export interface ConfirmPaymentResult {
@@ -27,7 +28,7 @@ export async function confirmPayment(
   const { repos, adapters } = container;
 
   // 1. signature verification
-  const verification = await adapters.payments.dodo.verifyWebhook(input.rawBody, input.signature);
+  const verification = await adapters.payments.dodo.verifyWebhook(input.rawBody, input.headers);
   if (!verification.ok || !verification.payload) {
     await audit(ctx, "payment.webhook.rejected", "payment", "—", { reason: verification.reason });
     return { ok: false, reason: verification.reason };
