@@ -47,16 +47,16 @@ export function getSocket(): Socket {
 }
 
 // ---------------- Hooks ----------------
-export function useLeaderboard(initialData?: LeaderState) {
+export function useLeaderboard(initialData?: LeaderState, timeframe: "today" | "alltime" = "alltime") {
   return useInfiniteQuery<LeaderState>({
-    queryKey: ["leaderboard"],
+    queryKey: ["leaderboard", timeframe],
     queryFn: async ({ pageParam }) => {
-      const r = await fetch(`/api/leaderboard?limit=48&cursor=${pageParam as number}`, { cache: "no-store" });
+      const r = await fetch(`/api/leaderboard?limit=48&cursor=${pageParam as number}&timeframe=${timeframe}`, { cache: "no-store" });
       if (!r.ok) throw new Error("fetch_failed");
       return r.json();
     },
     initialPageParam: 0,
-    initialData: initialData ? { pages: [initialData], pageParams: [0] } : undefined,
+    initialData: timeframe === "alltime" && initialData ? { pages: [initialData], pageParams: [0] } : undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ? Number(lastPage.nextCursor) : undefined,
     staleTime: 1000,
   });
@@ -134,7 +134,7 @@ export function useRealtime() {
       // Keep the cache in the shape expected by useInfiniteQuery. The
       // realtime snapshot is the newest first page, but must not replace the
       // whole InfiniteData object with a plain LeaderState.
-      qc.setQueryData<{ pages: LeaderState[]; pageParams: unknown[] }>(["leaderboard"], (current) => {
+      qc.setQueryData<{ pages: LeaderState[]; pageParams: unknown[] }>(["leaderboard", "alltime"], (current) => {
         if (!current) return { pages: [st], pageParams: [0] };
         return { ...current, pages: [st, ...current.pages.slice(1)] };
       });

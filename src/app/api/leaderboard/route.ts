@@ -2,7 +2,7 @@
 // Falls back to the realtime engine cache if PostgreSQL is empty (e.g. before seeding).
 import { NextRequest, NextResponse } from "next/server";
 import { prepareApiContext } from "@/server/infrastructure/api-helpers";
-import { fetchLeaderboard } from "@/server/application/fetch-leaderboard";
+import { fetchLeaderboard, type LeaderboardTimeframe } from "@/server/application/fetch-leaderboard";
 import type { LeaderState, Entity, Category } from "@/lib/outrank/types";
 import { captureServerError } from "@/server/infrastructure/error-tracker";
 import { realtimeUrl } from "@/server/infrastructure/realtime-url";
@@ -55,9 +55,11 @@ export async function GET(req: NextRequest) {
   const category = (req.nextUrl.searchParams.get("category") || "global") as Category;
   const limit = pageParam(req.nextUrl.searchParams.get("limit"), 48, 48);
   const cursor = pageParam(req.nextUrl.searchParams.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
+  const timeframeParam = req.nextUrl.searchParams.get("timeframe");
+  const timeframe: LeaderboardTimeframe = timeframeParam === "today" ? "today" : "alltime";
 
   try {
-    const view = await fetchLeaderboard(category, { limit, cursor });
+    const view = await fetchLeaderboard(category, { limit, cursor, timeframe });
     if (view.entries.length === 0) {
       // fall back to realtime engine cache
       try {

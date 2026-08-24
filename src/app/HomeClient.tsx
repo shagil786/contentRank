@@ -32,7 +32,8 @@ import { ProfilePanel } from "@/components/outrank/ProfilePanel";
 import { ErrorBoundary } from "@/components/outrank/ErrorBoundary";
 
 export default function HomeClient({ initialData }: { initialData: LeaderState }) {
-  const { data, hasNextPage, isFetchingNextPage, fetchNextPage } = useLeaderboard(initialData);
+  const timeframe = useUI((s) => s.timeframe);
+  const { data, hasNextPage, isFetchingNextPage, fetchNextPage } = useLeaderboard(initialData, timeframe);
   const rt = useRealtime();
   const category = useUI((s) => s.category);
   const openBoost = useUI((s) => s.openBoost);
@@ -41,9 +42,13 @@ export default function HomeClient({ initialData }: { initialData: LeaderState }
   const apiEntities = data?.pages.flatMap((page) => page.entities) ?? [];
   const entities = useMemo(() => {
     const byId = new Map(apiEntities.map((entity) => [entity.id, entity]));
-    for (const entity of rt.entities) byId.set(entity.id, entity);
+    // Realtime snapshots contain cumulative/all-time scores. Do not let them
+    // overwrite the API's day-scoped scores while TODAY is selected.
+    if (timeframe === "alltime") {
+      for (const entity of rt.entities) byId.set(entity.id, entity);
+    }
     return Array.from(byId.values());
-  }, [apiEntities, rt.entities]);
+  }, [apiEntities, rt.entities, timeframe]);
   const openedReturnPrompt = useRef(false);
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);

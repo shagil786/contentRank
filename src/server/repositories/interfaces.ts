@@ -35,6 +35,7 @@ export interface RankingRepository {
   // organic
   appendOrganicSnapshot(r: Omit<OrganicRanking, "id" | "snapshotAt">): Promise<OrganicRanking>;
   latestOrganicByCategory(category: Category): Promise<OrganicRanking[]>;
+  organicAtOrBefore(contentId: string, category: Category, at: Date): Promise<OrganicRanking | null>;
   organicHistory(contentId: string, limit: number): Promise<OrganicRanking[]>;
   // sponsored
   appendBid(b: Omit<SponsoredBid, "id" | "createdAt">): Promise<SponsoredBid>;

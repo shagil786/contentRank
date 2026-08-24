@@ -25,10 +25,13 @@ export interface LeaderboardView {
   total: number;
 }
 
-export async function fetchLeaderboard(category: Category = "global", options: { limit?: number; cursor?: number } = {}): Promise<LeaderboardView> {
+export type LeaderboardTimeframe = "today" | "alltime";
+
+export async function fetchLeaderboard(category: Category = "global", options: { limit?: number; cursor?: number; timeframe?: LeaderboardTimeframe } = {}): Promise<LeaderboardView> {
   const { repos } = container;
   const limit = Math.min(48, Math.max(1, options.limit ?? 48));
   const cursor = Math.max(0, options.cursor ?? 0);
+  const timeframe = options.timeframe ?? "alltime";
 
   // get all live content
   const contents = await repos.content.listAll("live");
@@ -43,10 +46,18 @@ export async function fetchLeaderboard(category: Category = "global", options: {
 
   // filter + sort
   const scoped = category === "global" ? contents : contents.filter(c => c.category === category);
+  const rankingCategory = category === "global" ? "global" : category;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayBaselines = timeframe === "today"
+    ? new Map((await Promise.all(scoped.map(async (c) => [c.id, await repos.ranking.organicAtOrBefore(c.id, rankingCategory, todayStart)] as const))).filter(([, snapshot]) => snapshot))
+    : new Map<string, OrganicRanking | null>();
   const ranked = scoped
     .map(c => ({
       content: c,
-      score: scoreMap.get(c.id)?.score ?? 0,
+      score: timeframe === "today"
+        ? Math.max(0, (scoreMap.get(c.id)?.score ?? 1000) - (todayBaselines.get(c.id)?.score ?? 1000))
+        : scoreMap.get(c.id)?.score ?? 0,
       momentum: scoreMap.get(c.id)?.momentum ?? 0,
     }))
     .sort((a, b) => b.score - a.score || a.content.createdAt.getTime() - b.content.createdAt.getTime());

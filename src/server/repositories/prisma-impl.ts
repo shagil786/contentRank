@@ -141,6 +141,13 @@ export const rankingRepo: RankingRepository = {
     }
     return out;
   },
+  async organicAtOrBefore(contentId, category, at) {
+    const row = await db.organicRanking.findFirst({
+      where: { contentId, category, snapshotAt: { lte: at } },
+      orderBy: { snapshotAt: "desc" },
+    });
+    return row ? { ...row } as OrganicRanking : null;
+  },
   async organicHistory(contentId, limit) {
     const rows = await db.organicRanking.findMany({
       where: { contentId }, orderBy: { snapshotAt: "desc" }, take: limit,
