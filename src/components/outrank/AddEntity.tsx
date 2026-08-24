@@ -87,6 +87,7 @@ export function AddEntity() {
   const [kind, setKind] = useState<EntityKind>("movie");
   const [sub, setSub] = useState("");
   const [blurb, setBlurb] = useState("");
+  const [initialBid, setInitialBid] = useState("");
   const [image, setImage] = useState<string | undefined>(undefined);
   const [resolvedUrl, setResolvedUrl] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -98,6 +99,7 @@ export function AddEntity() {
     setName("");
     setSub("");
     setBlurb("");
+    setInitialBid("");
     setKind("movie");
     setCategory("movies");
     setImage(undefined);
@@ -164,11 +166,46 @@ export function AddEntity() {
       toast.error("Give it a name");
       return;
     }
+    const bidDollars = Number.parseFloat(initialBid);
+    if (initialBid.trim() && (!Number.isFinite(bidDollars) || bidDollars < 1)) {
+      toast.error("Initial bid must be at least $1");
+      return;
+    }
     setBusy(true);
     try {
       const link = resolvedUrl || url.trim() || undefined;
       const r = await addEntity({ name, category, kind, sub, blurb, link, image });
       if (r?.ok && r.entity) {
+        if (Number.isFinite(bidDollars) && bidDollars >= 1) {
+          const bidResponse = await fetch("/api/bids/checkout", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": globalThis.crypto.randomUUID(),
+            },
+            body: JSON.stringify({
+              contentId: r.entity.id,
+              amount: Math.round(bidDollars * 100),
+              currency: "usd",
+              targetRank: r.entity.rank,
+              successUrl: `${window.location.origin}/?bid=success`,
+              cancelUrl: `${window.location.origin}/?bid=cancel`,
+            }),
+          });
+          const bidResult = await bidResponse.json().catch(() => null) as { checkoutUrl?: string; reason?: string } | null;
+          if (!bidResponse.ok || !bidResult?.checkoutUrl) {
+            toast.error("Added to the board, but checkout could not be started", {
+              description: bidResult?.reason || "You can open the entity and try the bid again.",
+            });
+            setOpen(false);
+            reset();
+            openEntity(r.entity as any);
+            return;
+          }
+          window.location.assign(bidResult.checkoutUrl);
+          return;
+        }
+
         toast.success(`${r.entity.name} IS ON THE BOARD`, {
           description: `Ranking #${String(r.entity.rank).padStart(2, "0")} — go defend it.`,
         });
@@ -321,7 +358,9 @@ export function AddEntity() {
           {/* category + context */}
           <div className="grid grid-cols-2 gap-3">
             <div className="min-w-0">
-              <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">CATEGORY</label>
+              <div className="min-h-10 mb-2 flex items-end">
+                <label className="font-mono text-[10px] tracking-widest text-muted-foreground leading-tight">CATEGORY</label>
+              </div>
               <Select value={category} onValueChange={(v) => setCategory(v as Category)}>
                 <SelectTrigger className={`w-full min-w-0 ${inputCls}`}>
                   <SelectValue />
@@ -336,13 +375,38 @@ export function AddEntity() {
               </Select>
             </div>
             <div className="min-w-0">
-              <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">CONTEXT (YEAR · MAKER · PLATFORM)</label>
+              <div className="min-h-10 mb-2 flex items-end">
+                <label className="font-mono text-[10px] tracking-widest text-muted-foreground leading-tight">CONTEXT (YEAR · MAKER · PLATFORM)</label>
+              </div>
               <Input
                 value={sub}
                 onChange={(e) => setSub(e.target.value)}
                 placeholder="2024 · A24"
                 className={`w-full min-w-0 ${inputCls}`}
               />
+            </div>
+          </div>
+
+          {/* optional first sponsored bid */}
+          <div>
+            <label className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">
+              INITIAL BID <span className="text-signal">·</span> OPTIONAL USD AMOUNT
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted-foreground">$</span>
+              <Input
+                type="number"
+                min="1"
+                step="0.01"
+                inputMode="decimal"
+                value={initialBid}
+                onChange={(e) => setInitialBid(e.target.value)}
+                placeholder="Leave blank for no paid bid"
+                className={`w-full pl-7 ${inputCls}`}
+              />
+            </div>
+            <div className="mt-1.5 font-mono text-[9px] tracking-widest text-muted-foreground leading-relaxed">
+              ENTER A CUSTOM AMOUNT TO OPEN CHECKOUT AFTER THIS ITEM IS ADDED · MINIMUM $1
             </div>
           </div>
 
@@ -364,7 +428,7 @@ export function AddEntity() {
             disabled={busy || !name.trim()}
             className="w-full py-4 bg-signal text-white font-display tracking-tighter2 text-lg hover:bg-signal-dim transition-colors disabled:opacity-40"
           >
-            {busy ? "PUTTING IT ON THE BOARD…" : "CLAIM ITS SPOT →"}
+            {busy ? "PUTTING IT ON THE BOARD…" : initialBid.trim() ? "ADD + OPEN CHECKOUT →" : "CLAIM ITS SPOT →"}
           </button>
           <div className="text-center font-mono text-[9px] tracking-widest text-muted-foreground">
             {(resolvedUrl || url.trim())
