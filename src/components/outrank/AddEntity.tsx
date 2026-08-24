@@ -187,7 +187,13 @@ export function AddEntity() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) reset();
+        setOpen(nextOpen);
+      }}
+    >
       <DialogContent className="max-w-lg w-[92vw] bg-paper text-ink border-ink p-0 overflow-hidden">
         <DialogHeader className="sr-only">
           <DialogTitle>Put something on the board</DialogTitle>
@@ -195,7 +201,15 @@ export function AddEntity() {
         </DialogHeader>
         <div className="bg-ink text-paper px-5 py-3 flex items-center justify-between">
           <span className="font-mono text-[10px] tracking-widest">+ PUT SOMETHING ON THE BOARD</span>
-          <button onClick={() => setOpen(false)} className="font-mono text-[10px] tracking-widest text-paper/60 hover:text-signal">CLOSE ✕</button>
+          <button
+            onClick={() => {
+              reset();
+              setOpen(false);
+            }}
+            className="font-mono text-[10px] tracking-widest text-paper/60 hover:text-signal"
+          >
+            CLOSE ✕
+          </button>
         </div>
 
         <div className="p-4 sm:p-5 space-y-4">
