@@ -131,7 +131,13 @@ export function useRealtime() {
         presence: st.presence,
         totalBoosts: st.totalBoosts,
       }));
-      qc.setQueryData(["leaderboard"], st);
+      // Keep the cache in the shape expected by useInfiniteQuery. The
+      // realtime snapshot is the newest first page, but must not replace the
+      // whole InfiniteData object with a plain LeaderState.
+      qc.setQueryData<{ pages: LeaderState[]; pageParams: unknown[] }>(["leaderboard"], (current) => {
+        if (!current) return { pages: [st], pageParams: [0] };
+        return { ...current, pages: [st, ...current.pages.slice(1)] };
+      });
     };
 
     const onConnect = () => {
