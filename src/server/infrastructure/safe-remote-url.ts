@@ -22,10 +22,13 @@ for (const [network, prefix] of [
   blocked.addSubnet(network, prefix, "ipv4");
 }
 
+// NOTE: no "::ffff:0:0/96" entry here. Node's BlockList matches ANY IPv4
+// address against that range, which silently blocked every legitimate IPv4
+// site (x.com, YouTube, ...). IPv4-mapped IPv6 addresses are handled
+// explicitly by mappedIpv4() below.
 for (const [network, prefix] of [
   ["::", 128],
   ["::1", 128],
-  ["::ffff:0:0", 96],
   ["fc00::", 7],
   ["fe80::", 10],
   ["ff00::", 8],
@@ -44,8 +47,26 @@ function normalizedHostname(url: URL): string {
   return url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
 }
 
+// Extract the embedded IPv4 from an IPv4-mapped IPv6 address, e.g.
+// "::ffff:127.0.0.1" or its hex form "::ffff:7f00:1" (how URL normalizes it).
+function mappedIpv4(address: string): string | null {
+  const m = address
+    .toLowerCase()
+    .match(/^::ffff:(?:(\d{1,3}(?:\.\d{1,3}){3})|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/);
+  if (!m) return null;
+  if (m[1]) return m[1];
+  const hi = parseInt(m[2], 16);
+  const lo = parseInt(m[3], 16);
+  return `${(hi >> 8) & 255}.${hi & 255}.${lo >> 8 & 255}.${lo & 255}`;
+}
+
 function isBlockedAddress(address: string, family: 4 | 6): boolean {
-  return blocked.check(address, family === 4 ? "ipv4" : "ipv6");
+  if (family === 4) return blocked.check(address, "ipv4");
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d): judge by the embedded IPv4 so mapped
+  // loopback/private literals stay blocked, and also by the raw v6 form.
+  const v4 = mappedIpv4(address);
+  if (v4 && isIP(v4) === 4 && blocked.check(v4, "ipv4")) return true;
+  return blocked.check(address, "ipv6");
 }
 
 /**
