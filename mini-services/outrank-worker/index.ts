@@ -134,6 +134,15 @@ async function jobRetryDeadLetter() {
   console.log("[worker] retry/dead-letter: payment retries handled by reconciliation; no queued dead letters");
 }
 
+// 7. Session cleanup — anonymous sessions (no handle) idle for 30+ days are
+// dead weight. Durable identities (subscriptions) live in their own table and
+// are never touched. Keeps the Session table from growing unbounded.
+async function jobSessionCleanup() {
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const removed = await container.repos.session.deleteStale(cutoff);
+  console.log(`[worker] session cleanup: ${removed} stale anonymous sessions removed`);
+}
+
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
 }
@@ -207,6 +216,7 @@ schedule("moderation-review", jobModerationReview, 10 * 60 * 1000); // every 10 
 schedule("payment-reconciliation", jobPaymentReconciliation, 5 * 60 * 1000);
 schedule("retry-dead-letter", jobRetryDeadLetter, 15 * 60 * 1000);
 schedule("notification-delivery", jobNotificationDelivery, 2 * 60 * 1000);
+schedule("session-cleanup", jobSessionCleanup, 24 * 60 * 60 * 1000); // daily
 
 // tiny HTTP health endpoint
 const httpServer = createServer((_req, res) => {

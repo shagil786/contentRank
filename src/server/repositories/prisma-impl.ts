@@ -388,8 +388,17 @@ export const sessionRepo: SessionRepository = {
         handle: patch.handle ?? undefined,
         location: patch.location ?? undefined,
         dailyHypeUsed: patch.dailyHypeUsed ?? undefined,
+        updatedAt: new Date(),
       },
     });
+  },
+  async deleteStale(cutoff) {
+    // Anonymous sessions carry no durable meaning once idle — subscriptions
+    // (the durable identity) reference their own table, not this one.
+    const result = await db.session.deleteMany({
+      where: { updatedAt: { lt: cutoff }, handle: null },
+    });
+    return result.count;
   },
 };
 

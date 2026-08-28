@@ -79,6 +79,8 @@ export interface SessionRepository {
   findById(id: string): Promise<Session | null>;
   create(): Promise<Session>;
   touch(id: string, patch: Partial<Pick<Session, "handle" | "location" | "dailyHypeUsed">>): Promise<void>;
+  /** Delete anonymous sessions with no activity newer than the cutoff. Returns rows removed. */
+  deleteStale(cutoff: Date): Promise<number>;
 }
 
 export interface SubscriptionRepository {
