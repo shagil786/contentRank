@@ -29,6 +29,30 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export function Header() {
   const { now, tz } = useClock();
   const { presence, fighting, connected } = useRealtime();
+  const [totalVisits, setTotalVisits] = useState<number | null>(null);
+
+  // All-time visitor count. The footer's reportVisit() ping is the canonical
+  // counter trigger; this bar reads the total the API returns, so both views
+  // agree without double-counting. If the footer never mounted (SSR-only
+  // crawl) or the API fails, the stat simply stays hidden.
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/analytics/visits", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((payload: { ok?: boolean; totalVisits?: string } | null) => {
+          if (!alive || !payload?.ok || payload.totalVisits === undefined) return;
+          const parsed = Number(payload.totalVisits);
+          if (Number.isFinite(parsed)) setTotalVisits(parsed);
+        })
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
   const setSearchOpen = useUI((s) => s.setSearchOpen);
   const setAddOpen = useUI((s) => s.setAddOpen);
   const soundOn = useUI((s) => s.soundOn);
@@ -51,6 +75,11 @@ export function Header() {
             {connected ? "LIVE" : "LINKING…"}
           </span>
           <span className="hidden sm:inline text-paper/60">{time}</span>
+          {totalVisits !== null && (
+            <span className="hidden md:inline text-paper/60" title="All-time site visitors — counted anonymously, at most once per visitor per day.">
+              {totalVisits.toLocaleString()} VISITED
+            </span>
+          )}
           <span className="hidden md:inline text-paper/60">{presence.toLocaleString()} WATCHING</span>
           {fighting > 0 && <span className="hidden md:inline text-signal">{fighting} BIDDING</span>}
         </div>
