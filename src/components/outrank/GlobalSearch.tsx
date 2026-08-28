@@ -14,6 +14,7 @@ import { useSearch, useRealtime } from "./providers";
 import { Poster } from "./Poster";
 import { CATEGORIES } from "@/lib/outrank/types";
 import type { Category, Entity } from "@/lib/outrank/types";
+import { captureClientEvent } from "@/lib/analytics/client";
 
 export function GlobalSearch() {
   const open = useUI((s) => s.searchOpen);
@@ -43,11 +44,13 @@ export function GlobalSearch() {
   }, [open]);
 
   const pick = (e: Entity) => {
+    captureClientEvent("search_result_selected", { content_id: e.id, category: e.category });
     handleOpenChange(false);
     openEntity(e);
   };
 
   const goCategory = (c: Category) => {
+    captureClientEvent("category_selected_from_search", { category: c });
     handleOpenChange(false);
     setCategory(c);
     setTab("board");

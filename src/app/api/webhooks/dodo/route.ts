@@ -8,7 +8,7 @@ import { confirmPayment } from "@/server/application/confirm-payment";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const prepared = await prepareApiContext(req, "webhook");
+  const prepared = await prepareApiContext(req, "webhook", { createSessionForWrite: false });
   if ("error" in prepared) return prepared.error;
   const { ctx } = prepared;
 
@@ -19,7 +19,6 @@ export async function POST(req: NextRequest) {
       id: req.headers.get("webhook-id"),
       signature: req.headers.get("webhook-signature"),
       timestamp: req.headers.get("webhook-timestamp"),
-      legacySignature: req.headers.get("x-dodo-signature"),
     },
   }, ctx);
 

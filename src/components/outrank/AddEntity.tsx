@@ -16,11 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useUI } from "@/lib/outrank/store";
 import { CATEGORIES, type Category, type EntityKind, type OgResult } from "@/lib/outrank/types";
 import { detectPlatform } from "@/lib/outrank/platform";
 import { toast } from "sonner";
+import { analyticsRequestHeaders, captureClientEvent } from "@/lib/analytics/client";
+import Link from "next/link";
 
 // OUTRANK-styled input classes (sharp corners, mono font, editorial)
 // Force explicit height + line-height so Select and Input match exactly.
@@ -75,6 +77,10 @@ export function AddEntity() {
   const [busy, setBusy] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [fetched, setFetched] = useState(false);
+
+  useEffect(() => {
+    if (open) captureClientEvent("add_form_opened");
+  }, [open]);
 
   const reset = () => {
     setUrl("");
@@ -144,7 +150,8 @@ export function AddEntity() {
   };
 
   const submit = async () => {
-    if (!name.trim()) {
+    const title = name.trim();
+    if (!title) {
       toast.error("Give it a name");
       return;
     }
@@ -161,19 +168,20 @@ export function AddEntity() {
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": globalThis.crypto.randomUUID(),
+          ...analyticsRequestHeaders(),
         },
         body: JSON.stringify({
-          title: name,
+          title,
           category,
           kind,
-          sub,
-          blurb,
+          sub: sub.trim() || undefined,
+          blurb: blurb.trim() || undefined,
           url: link,
           amount: Math.round(bidDollars * 100),
           currency: "usd",
           testMode: new URLSearchParams(window.location.search).has("test"),
-          successUrl: `${window.location.origin}/?bid=success&amount=${Math.round(bidDollars * 100)}`,
-          cancelUrl: `${window.location.origin}/?bid=cancel`,
+          successUrl: `${window.location.origin}/api/payment-return?bid=success&amount=${Math.round(bidDollars * 100)}`,
+          cancelUrl: `${window.location.origin}/api/payment-return?bid=cancel`,
         }),
       });
       const bidResult = await bidResponse.json().catch(() => null) as {
@@ -182,6 +190,7 @@ export function AddEntity() {
         errors?: { fieldErrors?: Record<string, string[]> };
       } | null;
       if (!bidResponse.ok || !bidResult?.checkoutUrl) {
+        captureClientEvent("checkout_error_shown", { flow: "initial_bid", reason: bidResult?.reason || "unknown" });
         const validationFields = bidResult?.reason === "validation"
           ? Object.entries(bidResult.errors?.fieldErrors || {})
               .flatMap(([field, messages]) => messages.map((message) => `${field}: ${message}`))
@@ -197,6 +206,11 @@ export function AddEntity() {
         toast.error("Checkout could not be started", { description: reason });
         return;
       }
+      captureClientEvent("checkout_redirected", {
+        flow: "initial_bid",
+        amount_cents: Math.round(bidDollars * 100),
+        category,
+      });
       window.location.assign(bidResult.checkoutUrl);
     } finally {
       setBusy(false);
@@ -374,7 +388,7 @@ export function AddEntity() {
               />
             </div>
             <div className="mt-1.5 font-mono text-[9px] tracking-widest text-muted-foreground leading-relaxed">
-              YOUR OPENING BID STARTS THE PAID AUCTION · MINIMUM $1
+              YOUR OPENING BID STARTS THE PAID AUCTION · MINIMUM $1 · DODO MAY DISPLAY THE LOCAL-CURRENCY CONVERSION
             </div>
           </div>
 
@@ -398,6 +412,9 @@ export function AddEntity() {
           >
             {busy ? "ADDING…" : "ADD →"}
           </button>
+          <p className="text-center font-mono text-[9px] leading-relaxed tracking-wide text-muted-foreground">
+            BY PAYING, YOU AGREE TO THE <Link className="underline hover:text-signal" href="/terms">TERMS</Link> AND <Link className="underline hover:text-signal" href="/refunds">REFUND POLICY</Link>.
+          </p>
         </div>
       </DialogContent>
     </Dialog>

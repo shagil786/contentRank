@@ -3,6 +3,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "@/components/outrank/providers";
 import { PwaRegister } from "@/components/outrank/PwaRegister";
+import { AnalyticsConsent } from "@/components/outrank/AnalyticsConsent";
 
 export const metadata: Metadata = {
   title: "OUTRANK — The internet is competing for attention.",
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       >
         <QueryProvider>{children}</QueryProvider>
         <PwaRegister />
+        <AnalyticsConsent />
         <Toaster position="bottom-center" />
       </body>
     </html>

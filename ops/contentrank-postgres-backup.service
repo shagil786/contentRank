@@ -1,0 +1,10 @@
+[Unit]
+Description=ContentRank PostgreSQL S3 backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=BACKUP_BUCKET=contentrank-postgres-backups-241431497063-ap-south-1
+Environment=POSTGRES_CONTAINER=backend-postgres-1
+ExecStart=/opt/contentrank/backend/bin/backup-postgres-s3.sh

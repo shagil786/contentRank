@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily ContentRank PostgreSQL S3 backup
+
+[Timer]
+OnCalendar=*-*-* 02:17:00 UTC
+Persistent=true
+Unit=contentrank-postgres-backup.service
+
+[Install]
+WantedBy=timers.target

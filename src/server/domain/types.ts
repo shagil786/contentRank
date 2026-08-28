@@ -85,8 +85,9 @@ export interface SponsoredBid {
   id: string;
   contentId: string;
   amount: number;       // cents
+  refundedAmount: number;
   currency: string;
-  status: "pending" | "settled" | "refunded" | "failed";
+  status: "pending" | "settled" | "disputed" | "refunded" | "failed";
   idempotencyKey?: string;
   paymentId?: string;
   session?: string;
@@ -101,9 +102,14 @@ export interface Payment {
   provider: "dodo" | "stub";
   providerPaymentId?: string;
   amount: number;
+  refundedAmount: number;
   currency: string;
-  status: "initiated" | "succeeded" | "failed" | "refunded";
+  mode: "live" | "test";
+  status: "initiated" | "succeeded" | "disputed" | "failed" | "refunded";
   webhookEventId?: string;
+  reconciliationAttempts: number;
+  lastReconciledAt?: Date;
+  lastReconciliationError?: string;
   createdAt: Date;
   updatedAt: Date;
 }

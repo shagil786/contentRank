@@ -58,5 +58,5 @@ export function detectPlatform(url?: string): PlatformInfo | null {
     }
   }
   // generic fallback
-  return { label: "↗", openLabel: "OPEN ORIGINAL", host };
+  return { label: "↗", openLabel: "OPEN ORIGINAL", host, color: "#111111" };
 }

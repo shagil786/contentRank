@@ -16,30 +16,30 @@ datasource db {
 // A piece of content ranked on the board: a post, video, song, movie, etc.
 // Submitted via URL → platform adapter → canonical identity → moderation → persist.
 model Content {
-  id            String   @id @default(cuid())
+  id          String   @id @default(cuid())
   // canonical identity from the platform adapter (e.g. "youtube:video:dQw4w9WgXcQ")
-  canonicalId   String   @unique
-  platform      String   // instagram | youtube | tiktok | x | threads | reddit | linkedin | web | manual
-  platformKey   String   // platform-specific content id (post id, video id, etc.)
-  url           String   // the public URL visitors click to view the original
-  title         String
-  description   String?
-  imageUrl      String?
-  kind          String   // movie | show | anime | game | song | album | creator | post | product | website | ai | topic | person | moment
-  category      String   // global | movies | tv | anime | games | music | creators | posts | ai | tech | sport | memes
-  blurb         String?
-  creatorId     String?
-  submittedBy   String?  // session id of submitter
-  status        String   @default("live") // pending | live | flagged | removed
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  canonicalId String   @unique
+  platform    String // instagram | youtube | tiktok | x | threads | reddit | linkedin | web | manual
+  platformKey String // platform-specific content id (post id, video id, etc.)
+  url         String // the public URL visitors click to view the original
+  title       String
+  description String?
+  imageUrl    String?
+  kind        String // movie | show | anime | game | song | album | creator | post | product | website | ai | topic | person | moment
+  category    String // global | movies | tv | anime | games | music | creators | posts | ai | tech | sport | memes
+  blurb       String?
+  creatorId   String?
+  submittedBy String? // session id of submitter
+  status      String   @default("live") // pending | live | flagged | removed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  creator       Creator?      @relation(fields: [creatorId], references: [id])
-  aliases       ContentAlias[]
-  metrics       Metric[]
-  organicRanks  OrganicRanking[]
-  bids          SponsoredBid[]
-  moderations   ModerationAction[]
+  creator      Creator?           @relation(fields: [creatorId], references: [id])
+  aliases      ContentAlias[]
+  metrics      Metric[]
+  organicRanks OrganicRanking[]
+  bids         SponsoredBid[]
+  moderations  ModerationAction[]
 
   @@index([category, status])
   @@index([platform, platformKey])
@@ -48,26 +48,26 @@ model Content {
 
 // Multiple URLs can resolve to the same canonical content (e.g. youtu.be/X and youtube.com/watch?v=X).
 model ContentAlias {
-  id            String   @id @default(cuid())
-  url           String   @unique
-  canonicalId   String   // -> Content.canonicalId
-  contentId     String
-  createdAt     DateTime @default(now())
+  id          String   @id @default(cuid())
+  url         String   @unique
+  canonicalId String // -> Content.canonicalId
+  contentId   String
+  createdAt   DateTime @default(now())
 
-  content       Content  @relation(fields: [contentId], references: [id])
+  content Content @relation(fields: [contentId], references: [id])
 
   @@index([url])
 }
 
 model Creator {
-  id            String   @id @default(cuid())
-  platform      String
-  handle        String   // @handle
-  displayName   String
-  avatarUrl     String?
-  createdAt     DateTime @default(now())
+  id          String   @id @default(cuid())
+  platform    String
+  handle      String // @handle
+  displayName String
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
 
-  content       Content[]
+  content Content[]
 
   @@unique([platform, handle])
 }
@@ -75,16 +75,16 @@ model Creator {
 // ---- Metrics domain ----
 // Time-series of engagement metrics fetched by background workers via platform adapters.
 model Metric {
-  id            String   @id @default(cuid())
-  contentId     String
-  source        String   // platform name | "outrank"
-  views         Int      @default(0)
-  likes         Int      @default(0)
-  comments      Int      @default(0)
-  shares        Int      @default(0)
-  fetchedAt     DateTime @default(now())
+  id        String   @id @default(cuid())
+  contentId String
+  source    String // platform name | "outrank"
+  views     Int      @default(0)
+  likes     Int      @default(0)
+  comments  Int      @default(0)
+  shares    Int      @default(0)
+  fetchedAt DateTime @default(now())
 
-  content       Content  @relation(fields: [contentId], references: [id])
+  content Content @relation(fields: [contentId], references: [id])
 
   @@index([contentId, fetchedAt])
 }
@@ -93,15 +93,15 @@ model Metric {
 // Snapshots of organic rank over time. The live board is cached in Redis (in-memory);
 // these rows are the durable history + source of truth for "peak rank" etc.
 model OrganicRanking {
-  id            String   @id @default(cuid())
-  contentId     String
-  category      String
-  rank          Int
-  score         Int      // organic hype score
-  momentum      Int      @default(0)
-  snapshotAt    DateTime @default(now())
+  id         String   @id @default(cuid())
+  contentId  String
+  category   String
+  rank       Int
+  score      Int // organic hype score
+  momentum   Int      @default(0)
+  snapshotAt DateTime @default(now())
 
-  content       Content  @relation(fields: [contentId], references: [id])
+  content Content @relation(fields: [contentId], references: [id])
 
   @@index([contentId, category, snapshotAt])
   @@index([category, snapshotAt])
@@ -110,20 +110,21 @@ model OrganicRanking {
 // ---- Sponsored bids domain (separate from organic) ----
 // Organic and sponsored rankings use separate services, tables, and strategies.
 model SponsoredBid {
-  id            String   @id @default(cuid())
-  contentId     String
-  amount        Int      // bid amount in cents
-  currency      String   @default("usd")
-  status        String   @default("pending") // pending | settled | refunded | failed
-  idempotencyKey String? @unique
-  paymentId     String?
-  session       String?  // session id of bidder
-  targetRank    Int?     // desired rank
-  createdAt     DateTime @default(now())
-  settledAt     DateTime?
+  id             String    @id @default(cuid())
+  contentId      String
+  amount         Int // bid amount in cents
+  refundedAmount Int       @default(0) // cumulative refunded cents; partial refunds reduce backing
+  currency       String    @default("usd")
+  status         String    @default("pending") // pending | settled | disputed | refunded | failed
+  idempotencyKey String?   @unique
+  paymentId      String?
+  session        String? // session id of bidder
+  targetRank     Int? // desired rank
+  createdAt      DateTime  @default(now())
+  settledAt      DateTime?
 
-  content       Content  @relation(fields: [contentId], references: [id])
-  payment       Payment? @relation(fields: [paymentId], references: [id])
+  content Content  @relation(fields: [contentId], references: [id])
+  payment Payment? @relation(fields: [paymentId], references: [id])
 
   @@index([contentId, status])
   @@index([status, createdAt])
@@ -132,31 +133,55 @@ model SponsoredBid {
 // ---- Payments domain ----
 // Accessed only through PaymentProvider interface. Dodo is one implementation.
 model Payment {
-  id            String   @id @default(cuid())
-  provider      String   // dodo | stub
-  providerPaymentId String? @unique
-  amount        Int      // cents
-  currency      String   @default("usd")
-  status        String   @default("initiated") // initiated | succeeded | failed | refunded
-  webhookEventId String? @unique // dedup
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                      String    @id @default(cuid())
+  provider                String // dodo | stub
+  providerPaymentId       String?   @unique
+  amount                  Int // cents
+  refundedAmount          Int       @default(0) // cumulative successful refunds in cents
+  currency                String    @default("usd")
+  mode                    String    @default("live") // live | test; selects the matching Dodo environment
+  status                  String    @default("initiated") // initiated | succeeded | disputed | failed | refunded
+  webhookEventId          String?   @unique // dedup
+  reconciliationAttempts  Int       @default(0)
+  lastReconciledAt        DateTime?
+  lastReconciliationError String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   bids          SponsoredBid[]
+  webhookEvents PaymentWebhookEvent[]
+
+  @@index([status, lastReconciledAt])
+}
+
+// Durable webhook-event ledger. Payment.webhookEventId is retained for legacy
+// compatibility, while this table deduplicates every event across the full
+// payment lifecycle instead of remembering only the most recent delivery.
+model PaymentWebhookEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique
+  eventType   String
+  paymentId   String
+  processedAt DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, processedAt])
+  @@index([eventType, processedAt])
 }
 
 // ---- Moderation domain ----
 model ModerationAction {
-  id            String   @id @default(cuid())
-  contentId     String
-  action        String   // report | review | hide | remove | restore
-  reason        String
-  status        String   @default("open") // open | acknowledged | resolved | dismissed
-  session       String?  // reporter session
-  createdAt     DateTime @default(now())
-  resolvedAt    DateTime?
+  id         String    @id @default(cuid())
+  contentId  String
+  action     String // report | review | hide | remove | restore
+  reason     String
+  status     String    @default("open") // open | acknowledged | resolved | dismissed
+  session    String? // reporter session
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
 
-  content       Content  @relation(fields: [contentId], references: [id])
+  content Content @relation(fields: [contentId], references: [id])
 
   @@index([contentId, status])
   @@index([status, createdAt])
@@ -168,14 +193,14 @@ model ModerationAction {
 // (content, bid, payment, moderation, ranking, boost). The targetType field
 // disambiguates.
 model AuditLog {
-  id            String   @id @default(cuid())
-  actor         String   // session id | "system" | "worker:metric-refresh" etc.
-  action        String   // content.submit | boost.organic | bid.create | payment.settle | moderation.report | ranking.recalc
-  targetType    String   // content | bid | payment | moderation | ranking | boost
-  targetId      String
-  payload       String   // JSON string of the change
-  requestId     String?
-  createdAt     DateTime @default(now())
+  id         String   @id @default(cuid())
+  actor      String // session id | "system" | "worker:metric-refresh" etc.
+  action     String // content.submit | boost.organic | bid.create | payment.settle | moderation.report | ranking.recalc
+  targetType String // content | bid | payment | moderation | ranking | boost
+  targetId   String
+  payload    String // JSON string of the change
+  requestId  String?
+  createdAt  DateTime @default(now())
 
   @@index([targetType, targetId])
   @@index([action, createdAt])
@@ -195,19 +220,19 @@ model Session {
 // content item. scopeKey makes the deduplication rule explicit for SQLite and
 // PostgreSQL alike (global = "global", entity = "entity:<contentId>").
 model Subscription {
-  id            String   @id @default(cuid())
-  email         String
-  entityId      String?
-  scopeKey      String   @unique
-  session       String?
-  createdAt     DateTime @default(now())
-  confirmedAt   DateTime?
-  confirmationTokenHash   String?   @unique
-  confirmationExpiresAt   DateTime?
-  unsubscribeTokenHash    String?   @unique
-  lastNotifiedRank        Int?
-  lastNotifiedContentId    String?
-  lastNotifiedAt           DateTime?
+  id                    String    @id @default(cuid())
+  email                 String
+  entityId              String?
+  scopeKey              String    @unique
+  session               String?
+  createdAt             DateTime  @default(now())
+  confirmedAt           DateTime?
+  confirmationTokenHash String?   @unique
+  confirmationExpiresAt DateTime?
+  unsubscribeTokenHash  String?   @unique
+  lastNotifiedRank      Int?
+  lastNotifiedContentId String?
+  lastNotifiedAt        DateTime?
 
   @@index([email, createdAt])
   @@index([entityId, createdAt])

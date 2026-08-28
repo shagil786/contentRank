@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useUI } from "@/lib/outrank/store";
 import { useRealtime } from "./providers";
 import { formatScore } from "@/lib/outrank/types";
+import Link from "next/link";
 
 export function ExperimentalFooter() {
   const { entities } = useRealtime();
@@ -66,9 +67,15 @@ export function ExperimentalFooter() {
             THE INTERNET IS COMPETING FOR ATTENTION · NOW YOU CAN SEE WHO OWNS IT.
           </div>
           <div className="font-mono text-[9px] tracking-widest text-paper/40">
-            BUILT AS A LIVE EXPERIMENT · MODE A · FREE
+            LIVE ATTENTION MARKET · EVERY BID IS PAID
           </div>
         </div>
+        <nav aria-label="Legal" className="relative mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono text-[9px] tracking-widest text-paper/50">
+          <Link className="hover:text-signal" href="/privacy">PRIVACY</Link>
+          <Link className="hover:text-signal" href="/terms">TERMS</Link>
+          <Link className="hover:text-signal" href="/refunds">REFUNDS</Link>
+          <a className="hover:text-signal" href="mailto:shagil@content-rank.lol">CONTACT</a>
+        </nav>
       </div>
     </footer>
   );

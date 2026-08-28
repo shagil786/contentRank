@@ -18,6 +18,9 @@ import { Poster } from "./Poster";
 import { useUI } from "@/lib/outrank/store";
 import { useRealtime } from "./providers";
 import { toast } from "sonner";
+import { analyticsRequestHeaders, captureClientEvent } from "@/lib/analytics/client";
+import { useIsMobile } from "@/hooks/use-mobile";
+import Link from "next/link";
 
 // USD boost presets (in cents for precision). No daily limit — users pay to move up.
 const PRESETS = [100, 500, 1000, 2000]; // $1, $5, $10, $20
@@ -35,11 +38,11 @@ export function BoostPanel() {
   const target = useUI((s) => s.boostTarget);
   const close = useUI((s) => s.closeBoost);
   const open = !!target;
+  const isMobile = useIsMobile();
 
-  return (
-    <>
+  return isMobile ? (
       <Drawer open={open} onOpenChange={(o) => !o && close()}>
-        <DrawerContent className="bg-paper text-ink sm:hidden max-h-[92vh]">
+        <DrawerContent className="bg-paper text-ink max-h-[92vh]">
           <DrawerHeader className="sr-only">
             <DrawerTitle>{target ? `Boost ${target.name}` : "Boost"}</DrawerTitle>
             <DrawerDescription>Pay to move this up the board.</DrawerDescription>
@@ -47,8 +50,9 @@ export function BoostPanel() {
           {target && <BoostBody key={target.id} target={target} close={close} />}
         </DrawerContent>
       </Drawer>
+  ) : (
       <Sheet open={open} onOpenChange={(o) => !o && close()}>
-        <SheetContent side="right" className="hidden sm:block w-full sm:max-w-md bg-paper text-ink border-l border-rule p-0 overflow-y-auto">
+        <SheetContent side="right" className="w-full sm:max-w-md bg-paper text-ink border-l border-rule p-0 overflow-y-auto">
           <SheetHeader className="sr-only">
             <SheetTitle>{target ? `Boost ${target.name}` : "Boost"}</SheetTitle>
             <SheetDescription>Pay to move this up the board.</SheetDescription>
@@ -62,7 +66,6 @@ export function BoostPanel() {
           {target && <BoostBody key={target.id} target={target} close={close} />}
         </SheetContent>
       </Sheet>
-    </>
   );
 }
 
@@ -105,6 +108,7 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": globalThis.crypto.randomUUID(),
+          ...analyticsRequestHeaders(),
         },
         body: JSON.stringify({
           contentId: target.id,
@@ -112,16 +116,26 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
           currency: "usd",
           targetRank: newRank,
           testMode: new URLSearchParams(window.location.search).has("test"),
-          successUrl: `${window.location.origin}/?bid=success&entityId=${encodeURIComponent(target.id)}&amount=${effAmount}`,
-          cancelUrl: `${window.location.origin}/?bid=cancel`,
+          successUrl: `${window.location.origin}/api/payment-return?bid=success&entityId=${encodeURIComponent(target.id)}&amount=${effAmount}`,
+          cancelUrl: `${window.location.origin}/api/payment-return?bid=cancel`,
         }),
       });
       const result = await response.json().catch(() => null) as { checkoutUrl?: string; reason?: string } | null;
       if (!response.ok || !result?.checkoutUrl) {
         throw new Error(result?.reason || "checkout_unavailable");
       }
+      captureClientEvent("checkout_redirected", {
+        flow: "defend",
+        amount_cents: effAmount,
+        content_id: target.id,
+        target_rank: newRank,
+      });
       window.location.assign(result.checkoutUrl);
     } catch (error) {
+      captureClientEvent("checkout_error_shown", {
+        flow: "defend",
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       console.error("Dodo checkout failed", error);
       toast.error("Checkout could not be started", {
         description: error instanceof Error && error.message === "csrf_failed"
@@ -150,7 +164,7 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
           <div className="font-mono text-[10px] text-muted-foreground mt-1">{target.sub}</div>
           <div className="flex items-baseline gap-1 mt-2">
             <ScoreCounter value={target.score} className="font-mono font-semibold" />
-            <span className="font-mono text-[10px] text-muted-foreground">BACKED · {formatScore(target.supporters)} BACKERS</span>
+            <span className="font-mono text-[10px] text-muted-foreground">BACKED · {target.supporters.toLocaleString()} BACKERS</span>
           </div>
         </div>
       </div>
@@ -231,6 +245,9 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
           />
           <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[10px] text-muted-foreground pointer-events-none">USD</span>
         </div>
+        <div className="mt-2 font-mono text-[9px] tracking-wide text-muted-foreground">
+          Entered amount is USD. Dodo may display the converted local-currency total at checkout.
+        </div>
       </div>
 
       <button
@@ -240,6 +257,9 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
       >
         {sponsoring ? "OPENING CHECKOUT…" : `PLACE BID · ${formatUsd(effAmount)} →`}
       </button>
+      <p className="mt-2 text-center font-mono text-[9px] leading-relaxed tracking-wide text-muted-foreground">
+        BY PAYING, YOU AGREE TO THE <Link className="underline hover:text-signal" href="/terms">TERMS</Link> AND <Link className="underline hover:text-signal" href="/refunds">REFUND POLICY</Link>.
+      </p>
     </div>
   );
 }

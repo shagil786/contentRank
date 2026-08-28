@@ -27,7 +27,7 @@ export function PostBidPrompt() {
               }}
               className="w-full py-3.5 bg-signal text-white font-mono text-[11px] tracking-widest hover:bg-signal-dim transition-colors mb-2"
             >
-              TRACK {postBid.entity.name} →
+              TRACK THIS ENTITY →
             </button>
             <button
               onClick={close}

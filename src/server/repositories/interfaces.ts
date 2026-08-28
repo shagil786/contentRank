@@ -35,22 +35,32 @@ export interface RankingRepository {
   // organic
   appendOrganicSnapshot(r: Omit<OrganicRanking, "id" | "snapshotAt">): Promise<OrganicRanking>;
   latestOrganicByCategory(category: Category): Promise<OrganicRanking[]>;
+  rankedContentPage(input: {
+    category: Category;
+    timeframe: "today" | "alltime";
+    limit: number;
+    cursor?: { score: number; createdAt: Date; id: string };
+  }): Promise<{ rows: Array<{ content: Content; score: number; backedCents: number; bidCount: number; momentum: number; rank: number }>; total: number; hasMore: boolean; nextCursor?: { score: number; createdAt: Date; id: string } }>;
   organicAtOrBefore(contentId: string, category: Category, at: Date): Promise<OrganicRanking | null>;
-  organicHistory(contentId: string, limit: number): Promise<OrganicRanking[]>;
+  organicHistory(contentId: string, limit: number, category?: Category): Promise<OrganicRanking[]>;
   // sponsored
   appendBid(b: Omit<SponsoredBid, "id" | "createdAt">): Promise<SponsoredBid>;
   findBidByIdempotencyKey(key: string): Promise<SponsoredBid | null>;
   findBidByPaymentId(paymentId: string): Promise<SponsoredBid | null>;
-  updateBidStatus(id: string, status: SponsoredBid["status"], paymentId?: string, settledAt?: Date): Promise<void>;
+  updateBidStatus(id: string, status: SponsoredBid["status"], paymentId?: string, settledAt?: Date, refundedAmount?: number): Promise<void>;
   activeBidsByContent(contentId: string): Promise<SponsoredBid[]>;
 }
 
 export interface PaymentRepository {
-  insert(p: Omit<Payment, "id" | "createdAt" | "updatedAt">): Promise<Payment>;
+  insert(p: Omit<Payment, "id" | "createdAt" | "updatedAt" | "refundedAmount" | "reconciliationAttempts" | "lastReconciledAt" | "lastReconciliationError"> & Partial<Pick<Payment, "refundedAmount">>): Promise<Payment>;
   findById(id: string): Promise<Payment | null>;
   findByProviderPaymentId(pid: string): Promise<Payment | null>;
   findByWebhookEventId(eid: string): Promise<Payment | null>;
+  recordWebhookEvent(input: { eventId: string; eventType: string; paymentId: string }): Promise<void>;
   updateStatus(id: string, status: Payment["status"], providerPaymentId?: string, webhookEventId?: string): Promise<void>;
+  updateAccounting(id: string, input: { status: Payment["status"]; refundedAmount: number; providerPaymentId?: string; webhookEventId?: string }): Promise<void>;
+  listForReconciliation(input: { initiatedBefore: Date; recheckBefore: Date; limit: number }): Promise<Payment[]>;
+  markReconciled(id: string, error?: string): Promise<void>;
 }
 
 export interface ModerationRepository {

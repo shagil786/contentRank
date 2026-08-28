@@ -71,16 +71,16 @@ function TopOne({ entity, onBoost }: { entity: DisplayEntity; onBoost: (e: Entit
       role="button"
       tabIndex={0}
       aria-label={`Open details for ${entity.name}, rank ${entity.localRank}`}
-      className="relative cursor-pointer overflow-hidden invert-block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-signal"
+      className="relative min-h-[30rem] sm:min-h-[34rem] cursor-pointer overflow-hidden invert-block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-signal"
       data-cursor="OPEN"
     >
-      <div className="grid grid-cols-1 sm:grid-cols-[3fr_2fr]">
+      <div className="grid min-w-0 min-h-[30rem] sm:min-h-[34rem] grid-cols-1 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         {/* left: poster — portrait aspect ratio matches the SVG (400x560) so nothing clips */}
-        <div className="relative aspect-[16/9] sm:aspect-[5/4]">
+        <div className="relative min-w-0 min-h-[14rem] aspect-[16/9] sm:min-h-0 sm:aspect-[5/4]">
           <Poster entity={entity} variant="hero" className="absolute inset-0 h-full w-full" />
         </div>
         {/* right: typographic block */}
-        <div className="relative flex flex-col justify-between p-5 sm:p-8 border-t sm:border-t-0 sm:border-l border-paper/15">
+        <div className="relative flex min-w-0 min-h-[16rem] flex-col justify-between p-5 sm:min-h-0 sm:p-8 border-t sm:border-t-0 sm:border-l border-paper/15">
           <div className="flex items-start justify-between">
             <div>
               <div className="font-mono text-[10px] tracking-widest text-signal mb-2 flex items-center gap-2">
@@ -101,12 +101,12 @@ function TopOne({ entity, onBoost }: { entity: DisplayEntity; onBoost: (e: Entit
           </div>
 
           <div className="mt-4">
-            <h2 className="font-display tracking-tightest text-paper leading-[0.84]" style={{ fontSize: "clamp(2rem,5vw,3.4rem)" }}>
+            <h2 className="min-w-0 line-clamp-2 min-h-[3.35rem] font-display tracking-tightest text-paper leading-[0.84]" style={{ fontSize: "clamp(2rem,5vw,3.4rem)" }}>
               {entity.name}
             </h2>
-            <div className="font-mono text-[11px] tracking-wide text-paper/60 mt-2">{entity.sub}</div>
+            <div className="font-mono text-[11px] tracking-wide text-paper/60 mt-2 truncate">{entity.sub}</div>
             {entity.blurb && entity.blurb !== entity.sub && (
-              <p className="hidden sm:block text-paper/70 text-sm mt-3 max-w-md leading-snug">{entity.blurb}</p>
+              <p className="hidden sm:block line-clamp-3 min-h-[3.75rem] text-paper/70 text-sm mt-3 max-w-md leading-snug">{entity.blurb}</p>
             )}
           </div>
 
@@ -117,7 +117,7 @@ function TopOne({ entity, onBoost }: { entity: DisplayEntity; onBoost: (e: Entit
                 <span className="font-mono text-[11px] text-paper/60">BACKED</span>
               </div>
               <div className="font-mono text-[10px] tracking-widest text-paper/50 mt-1">
-                {formatScore(entity.supporters)} BACKERS · 24H {entity.momentum > 0 ? "+" : ""}{entity.momentum}
+                {entity.supporters.toLocaleString()} BACKERS · 24H {entity.momentum > 0 ? "+" : ""}{entity.momentum}
               </div>
             </div>
             <button
@@ -125,9 +125,10 @@ function TopOne({ entity, onBoost }: { entity: DisplayEntity; onBoost: (e: Entit
                 e.stopPropagation();
                 onBoost(entity);
               }}
-              className="px-4 sm:px-6 py-2.5 bg-signal text-white font-mono text-[11px] sm:text-xs tracking-widest hover:bg-signal-dim transition-colors border border-signal"
+              data-cursor="DEFEND"
+              className="cursor-pointer px-4 sm:px-6 py-2.5 bg-signal text-white font-mono text-[11px] sm:text-xs tracking-widest hover:bg-signal-dim transition-colors border border-signal"
             >
-              BID TO HOLD #1 →
+              DEFEND #1 →
             </button>
           </div>
         </div>

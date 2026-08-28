@@ -57,3 +57,8 @@ server.log
 *.pid
 # Skills directory
 /skills/
+
+# large local screen recordings / demo video assets
+/outrank_*.mp4
+/outrank_*.mov
+/video-scenes/

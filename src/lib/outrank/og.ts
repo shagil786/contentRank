@@ -4,6 +4,7 @@
 // from a pasted link (Movie/TV/Game/Song/Creator/Post/Product/Website URLs).
 
 import type { OgResult } from "@/lib/outrank/types";
+import { assertSafeRemoteHttpUrl } from "@/server/infrastructure/safe-remote-url";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -123,16 +124,36 @@ export async function fetchOpenGraph(url: string): Promise<OgResult> {
     return { url, ok: false, reason: "bad_scheme" };
   }
 
+  try {
+    u = await assertSafeRemoteHttpUrl(u);
+  } catch {
+    return { url: u.toString(), ok: false, reason: "blocked_url" };
+  }
+
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), 8000);
 
   try {
-    const res = await fetch(u.toString(), {
-      signal: ctrl.signal,
-      redirect: "follow",
-      headers: FETCH_HEADERS,
-    });
+    let current = u;
+    let res: Response | undefined;
+    for (let redirects = 0; redirects <= 4; redirects += 1) {
+      current = await assertSafeRemoteHttpUrl(current);
+      res = await fetch(current.toString(), {
+        signal: ctrl.signal,
+        redirect: "manual",
+        headers: FETCH_HEADERS,
+      });
+      if (res.status < 300 || res.status >= 400) break;
+      const location = res.headers.get("location");
+      await res.body?.cancel();
+      if (!location || redirects === 4) {
+        return { url: current.toString(), ok: false, reason: "redirect_failed" };
+      }
+      current = new URL(location, current);
+    }
     clearTimeout(timeout);
+
+    if (!res) return { url: u.toString(), ok: false, reason: "fetch_failed" };
 
     if (!res.ok) {
       return { url: u.toString(), ok: false, reason: `http_${res.status}` };
@@ -171,13 +192,14 @@ export async function fetchOpenGraph(url: string): Promise<OgResult> {
     const headEnd = html.search(/<\/head>/i);
     if (headEnd > 0) html = html.slice(0, headEnd);
 
-    const finalUrl = res.url || u.toString();
+    const finalUrl = res.url || current.toString();
+    const finalUrlObject = new URL(finalUrl);
     const title = ogTitle(html);
     const description = ogDescription(html);
     const image = ogImage(html, finalUrl);
-    const siteName = ogSiteName(html) || finalUrl.hostname.replace(/^www\./, "");
+    const siteName = ogSiteName(html) || finalUrlObject.hostname.replace(/^www\./, "");
     const type = ogType(html);
-    const canonical = ogUrl(html, finalUrl);
+    const canonical = ogUrl(html, finalUrl) || finalUrl;
 
     if (!title && !description && !image) {
       return { url: finalUrl, ok: false, reason: "no_meta" };

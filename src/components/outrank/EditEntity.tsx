@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useUI } from "@/lib/outrank/store";
+import { useQueryClient } from "@/components/outrank/providers";
 import { toast } from "sonner";
 
 const inputCls = "bg-transparent border-ink/30 font-mono text-xs focus-visible:border-ink focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none h-10 min-h-10 leading-none";
@@ -13,6 +14,7 @@ const inputCls = "bg-transparent border-ink/30 font-mono text-xs focus-visible:b
 export function EditEntity() {
   const target = useUI((state) => state.editTarget);
   const close = useUI((state) => state.closeEdit);
+  const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [blurb, setBlurb] = useState("");
   const [link, setLink] = useState("");
@@ -36,7 +38,8 @@ export function EditEntity() {
       if (!data.ok) throw new Error(data.reason || "Update failed");
       toast.success("ENTITY UPDATED");
       close();
-      window.location.reload();
+      await queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
+      await queryClient.invalidateQueries({ queryKey: ["search"] });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Update failed");
     } finally { setBusy(false); }

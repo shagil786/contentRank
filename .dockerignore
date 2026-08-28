@@ -1,0 +1,14 @@
+.git
+.gitignore
+.next
+node_modules
+.env
+.env.*
+!.env.example
+*.log
+*.mp4
+backups
+coverage
+video-scenes
+.zscripts
+.codebase-memory

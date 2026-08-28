@@ -1,11 +1,10 @@
 // GET /api/leaderboard — canonical organic leaderboard from PostgreSQL (source of truth).
-// Falls back to the realtime engine cache if PostgreSQL is empty (e.g. before seeding).
+// An empty database is a valid state and must never be replaced with stale realtime data.
 import { NextRequest, NextResponse } from "next/server";
 import { prepareApiContext } from "@/server/infrastructure/api-helpers";
 import { fetchLeaderboard, type LeaderboardTimeframe } from "@/server/application/fetch-leaderboard";
 import type { LeaderState, Entity, Category } from "@/lib/outrank/types";
 import { captureServerError } from "@/server/infrastructure/error-tracker";
-import { realtimeUrl } from "@/server/infrastructure/realtime-url";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,15 +13,18 @@ const FALLBACK: LeaderState = {
   entities: [], activity: [], presence: 0, totalBoosts: 0, ts: Date.now(),
 };
 
-function pageParam(value: string | null, fallback: number, max: number): number {
-  if (!value?.trim()) return fallback;
+function cursorParam(value: string | null): string | undefined {
+  return value?.trim() || undefined;
+}
+
+function limitParam(value: string | null): number {
   const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 0 ? Math.min(parsed, max) : fallback;
+  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 48) : 48;
 }
 
 // map a Content+ranking row from PostgreSQL into the Entity shape the frontend expects
 function toEntity(entry: {
-  content: any; rank: number; score: number; momentum: number; prevRank: number; peakRank: number; history: any[];
+  content: any; backedCents: number; bidCount: number; rank: number; score: number; momentum: number; prevRank: number; peakRank: number; history: any[];
 }): Entity {
   const c = entry.content;
   return {
@@ -36,7 +38,7 @@ function toEntity(entry: {
     link: c.url || undefined,
     image: c.imageUrl || undefined,
     score: entry.score,
-    supporters: 0,
+    supporters: entry.bidCount,
     prevRank: entry.prevRank,
     rank: entry.rank,
     peakRank: entry.peakRank,
@@ -53,22 +55,14 @@ export async function GET(req: NextRequest) {
   const { ctx } = prepared;
 
   const category = (req.nextUrl.searchParams.get("category") || "global") as Category;
-  const limit = pageParam(req.nextUrl.searchParams.get("limit"), 48, 48);
-  const cursor = pageParam(req.nextUrl.searchParams.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
+  const limit = limitParam(req.nextUrl.searchParams.get("limit"));
+  const cursor = cursorParam(req.nextUrl.searchParams.get("cursor"));
   const timeframeParam = req.nextUrl.searchParams.get("timeframe");
   const timeframe: LeaderboardTimeframe = timeframeParam === "today" ? "today" : "alltime";
 
   try {
     const view = await fetchLeaderboard(category, { limit, cursor, timeframe });
     if (view.entries.length === 0) {
-      // fall back to realtime engine cache
-      try {
-        const r = await fetch(realtimeUrl("state"), { cache: "no-store" });
-        if (r.ok) {
-          const data = (await r.json()) as LeaderState;
-          return NextResponse.json({ ...data, entities: data.entities.slice(0, limit), nextCursor: undefined }, { headers: { "Cache-Control": "no-store", "X-Request-Id": ctx.requestId } });
-        }
-      } catch { /* ignore */ }
       return NextResponse.json(FALLBACK, { headers: { "Cache-Control": "no-store", "X-Request-Id": ctx.requestId } });
     }
     const entities = view.entries.map(toEntity);

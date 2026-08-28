@@ -11,6 +11,9 @@ export interface CreateCheckoutInput {
   cancelUrl: string;
   description: string;
   mode?: "live" | "test";
+  analyticsDistinctId?: string;
+  analyticsSessionId?: string;
+  analyticsFlow?: "initial_bid" | "defend";
 }
 
 export interface CreateCheckoutResult {
@@ -19,13 +22,43 @@ export interface CreateCheckoutResult {
   providerPaymentId?: string;
 }
 
+export class CheckoutCreationError extends Error {
+  constructor(message: string, readonly paymentId?: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "CheckoutCreationError";
+  }
+}
+
 export interface WebhookPayload {
-  providerPaymentId: string;
+  providerPaymentId?: string;
+  internalPaymentId?: string;
   event_id: string;        // for dedup
-  status: "succeeded" | "failed" | "refunded";
+  eventType: string;
+  status: "succeeded" | "failed" | "refunded" | "disputed" | "ignored";
   amount: number;
+  refundAmount?: number;
+  isPartialRefund?: boolean;
+  disputeId?: string;
+  disputeStatus?: string;
+  disputeStage?: string;
   currency: string;
+  customerEmail?: string;
+  analyticsDistinctId?: string;
+  analyticsSessionId?: string;
+  analyticsFlow?: "initial_bid" | "defend";
   raw: Record<string, unknown>;
+}
+
+export interface PaymentSnapshot {
+  providerPaymentId: string;
+  status: "initiated" | "succeeded" | "failed";
+  amount: number;
+  refundedAmount: number;
+  currency: string;
+  customerEmail?: string;
+  analyticsDistinctId?: string;
+  analyticsSessionId?: string;
+  analyticsFlow?: "initial_bid" | "defend";
 }
 
 export interface WebhookVerification {
@@ -38,12 +71,11 @@ export interface WebhookSignatureHeaders {
   id: string | null;
   signature: string | null;
   timestamp: string | null;
-  /** Legacy header retained for compatibility with earlier test deliveries. */
-  legacySignature: string | null;
 }
 
 export interface PaymentProvider {
   readonly name: "dodo" | "stripe" | "stub";
   createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult>;
+  retrievePayment(providerPaymentId: string, mode: "live" | "test"): Promise<PaymentSnapshot>;
   verifyWebhook(rawBody: string, headers: WebhookSignatureHeaders): Promise<WebhookVerification>;
 }

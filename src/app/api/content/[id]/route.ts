@@ -5,6 +5,7 @@ import { prepareApiContext, jsonResponse } from "@/server/infrastructure/api-hel
 import { container } from "@/server/application/container";
 import { audit } from "@/server/infrastructure/request-context";
 import { plainText } from "@/server/infrastructure/text";
+import { getRedis } from "@/server/infrastructure/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -40,5 +41,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     before: { title: existing.title, blurb: existing.blurb, url: existing.url },
     after: { title: content.title, blurb: content.blurb, url: content.url },
   });
+  try {
+    const redis = await getRedis();
+    await redis?.publish("outrank:entity-updated", JSON.stringify({
+      id: content.id,
+      title: content.title,
+      blurb: content.blurb ?? "",
+      description: content.description ?? "",
+      platform: content.platform,
+      url: content.url,
+    }));
+  } catch { /* Redis is a best-effort realtime notification path. */ }
   return jsonResponse({ ok: true, content }, 200, { requestId: ctx.requestId, sessionId: ctx.session });
 }

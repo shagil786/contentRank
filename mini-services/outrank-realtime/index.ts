@@ -2,20 +2,28 @@ import { createServer, IncomingMessage, ServerResponse } from "http";
 import { Server } from "socket.io";
 import { createClient } from "redis";
 import { createAdapter } from "@socket.io/redis-adapter";
-import { getRedis } from "../../src/server/infrastructure/redis";
 import type {
   Entity,
   Category,
   ActivityEvent,
   LeaderState,
   BoostRequest,
-  RankUpdatedEvent,
   AddEntityRequest,
 } from "../../src/lib/outrank/types";
-import { DAILY_HYPE } from "../../src/lib/outrank/types";
 import { SEED_LOCATIONS } from "./seed";
 
 const API_BASE_URL = (process.env.API_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+const APP_ORIGIN = (() => {
+  try { return new URL(process.env.APP_URL || "http://localhost:3000").origin; }
+  catch { return "http://localhost:3000"; }
+})();
+const SOCKET_ORIGINS = new Set([
+  APP_ORIGIN,
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:3100",
+  "http://127.0.0.1:3100",
+]);
 
 // ---------------- HYDRATION FROM POSTGRESQL ----------------
 // PostgreSQL is the source of truth. On boot we hydrate the in-memory cache
@@ -36,11 +44,11 @@ async function hydrateFromPostgres(): Promise<Entity[]> {
       clearTimeout(t);
       if (!res.ok) throw new Error(`bad_status_${res.status}`);
       const data = (await res.json()) as LeaderState;
-      if (data.entities && data.entities.length > 0) {
+      if (Array.isArray(data.entities)) {
         console.log(`[hydrate] loaded ${data.entities.length} entities from PostgreSQL (attempt ${attempt})`);
         return data.entities;
       }
-      throw new Error("empty");
+      throw new Error("invalid_payload");
     } catch (e) {
       console.log(`[hydrate] attempt ${attempt}/${MAX_RETRIES} failed: ${(e as Error).message}`);
       if (attempt < MAX_RETRIES) {
@@ -59,29 +67,14 @@ let presence = 0;
 let fighting = 0;
 let totalBoosts = 0;
 
-// session ledger: socketId -> { handle, location, sessionId } (no daily limit — paid model)
-const ledgers = new Map<string, { handle: string; location: string; sessionId?: string }>();
+// Ephemeral display metadata only. Reconnects must not create durable database
+// sessions; paid writes go through the Next.js checkout API and its cookie.
+const ledgers = new Map<string, { handle: string; location: string }>();
 const INSTANCE_ID = process.env.INSTANCE_ID || `realtime-${Math.random().toString(36).slice(2, 10)}`;
-const SIMULATOR_LEASE_KEY = "outrank:realtime:simulator-leader";
 let redisAdapterEnabled = false;
 
 const HANDLES = ["anon", "ghost", "vega", "neon", "k9", "ruby", "echo", "halo", "zed", "milo", "noir", "pixel", "rune", "volt", "wren", "cyan", "onyx", "cobalt", "fenn", "jett"];
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
-
-function recalcRanks(scope: Entity[]) {
-  // deterministic: score desc, createdAt asc (older wins ties)
-  const sorted = [...scope].sort((a, b) => b.score - a.score || a.createdAt - b.createdAt);
-  sorted.forEach((e, i) => {
-    e.rank = i + 1;
-  });
-}
-
-function recomputeAllRanks() {
-  // global ranking across all entities
-  recalcRanks(entities);
-}
-
-// ranks recomputed after hydration (see bottom of file)
 
 function rankedForCategory(cat: Category): Entity[] {
   if (cat === "global") {
@@ -92,197 +85,13 @@ function rankedForCategory(cat: Category): Entity[] {
     .sort((a, b) => b.score - a.score || a.createdAt - b.createdAt);
 }
 
-function categoryOf(e: Entity): Category {
-  return e.category;
-}
-
-// ---------------- TIME-DECAY ----------------
-// Recent backing should matter more than old backing so the board continues to cycle.
-interface TimedBoost { amount: number; ts: number }
-const boostLog = new Map<string, TimedBoost[]>();
-const pendingRankEvents = new Map<string, RankUpdatedEvent>();
-
-// Keep boost acknowledgements immediate, but coalesce broadcast rank updates
-// for the same entity into one event per 100 ms burst window.
-setInterval(() => {
-  for (const event of pendingRankEvents.values()) io.emit("rank.updated", event);
-  pendingRankEvents.clear();
-}, 100);
-
-function decayFactor(boostTs: number, now = Date.now()): number {
-  const ageHours = (now - boostTs) / (1000 * 60 * 60);
-  if (ageHours <= 24) return 1;
-  if (ageHours <= 168) return 1 - 0.5 * ((ageHours - 24) / 144);
-  return 0.5;
-}
-
-function computeDecayedScore(entityId: string, now = Date.now()): number {
-  return Math.round((boostLog.get(entityId) || []).reduce((sum, boost) => sum + boost.amount * decayFactor(boost.ts, now), 0));
-}
-
-function applyDecayAndRerank() {
-  let changed = false;
-  const now = Date.now();
-  for (const entity of entities) {
-    const score = computeDecayedScore(entity.id, now);
-    if (score !== entity.score) { entity.score = score; changed = true; }
-  }
-  if (changed) { recomputeAllRanks(); io.emit("snapshot", { type: "snapshot", state: snapshot() } as const); }
-}
-
-setInterval(applyDecayAndRerank, 30_000);
-
-// ---------------- BOOST (paid — USD, no daily limit) ----------------
-function applyBoost(req: BoostRequest, socketId: string, isSim = false): { ok: boolean; reason?: string; ack?: any } {
-  const e = entities.find((x) => x.id === req.entityId || x.slug === req.entityId);
-  if (!e) return { ok: false, reason: "no_entity" };
-
-  const amount = Math.max(1, Math.floor(req.amount)); // cents — no daily limit
-
-  const boosts = boostLog.get(e.id) || [];
-  boosts.push({ amount, ts: Date.now() });
-  if (boosts.length > 200) boosts.shift();
-  boostLog.set(e.id, boosts);
-
-  const prevRank = e.rank;
-  const prevScore = e.score;
-  const prevGlobalRank = e.rank; // global rank stored on entity.rank
-
-  e.score = computeDecayedScore(e.id);
-  e.supporters += 1;
-
-  // recompute global ranks (entities carry global rank on .rank)
-  recomputeAllRanks();
-
-  const newRank = e.rank;
-  const newScore = e.score;
-  if (newRank < e.peakRank) e.peakRank = newRank;
-  // momentum: positions moved up since previous state
-  const moved = prevRank - newRank;
-  if (moved !== 0) e.momentum += moved;
-
-  // push a history point (throttle to one per ~5s per entity via replacing last if close)
-  const now = Date.now();
-  const last = e.history[e.history.length - 1];
-  if (last && now - last.t < 5000) {
-    last.t = now;
-    last.rank = newRank;
-    last.score = newScore;
-  } else {
-    e.history.push({ t: now, rank: newRank, score: newScore });
-    if (e.history.length > 48) e.history.shift();
-  }
-
-  // figure out displaced entities in GLOBAL scope (rows that changed rank)
-  const displaced: { entityId: string; fromRank: number; toRank: number }[] = [];
-  // simplest: any entity whose rank changed is displaced; we approximate by recomputing
-  // We already mutated ranks globally; to find displaced, we'd need pre-state.
-  // For the event, compute displaced as entities strictly between prevRank and newRank in global.
-  if (newRank !== prevRank) {
-    const lo = Math.min(prevRank, newRank);
-    const hi = Math.max(prevRank, newRank);
-    for (const o of entities) {
-      if (o.id === e.id) continue;
-      if (o.rank >= lo && o.rank <= hi) {
-        displaced.push({ entityId: o.id, fromRank: o.rank + (newRank < prevRank ? -1 : 1) * 0, toRank: o.rank });
-      }
-    }
-  }
-
-  totalBoosts += 1;
-
-  const handle = isSim ? pick(HANDLES) : ledgers.get(socketId)?.handle ?? "anon";
-  const location = isSim ? pick(SEED_LOCATIONS) : ledgers.get(socketId)?.location ?? "—";
-
-  // persist to PostgreSQL (source of truth) via the application layer.
-  // fire-and-forget so the realtime UX stays instant; the write is audited there.
-  if (!isSim) {
-    const sessionId = ledgers.get(socketId)?.sessionId;
-    if (sessionId) {
-      fetch(`${API_BASE_URL}/api/boosts`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Outrank-Session": sessionId,
-          "X-Request-Id": `rt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        },
-        body: JSON.stringify({ contentId: e.id, amount }),
-      }).catch(() => {/* fire-and-forget; PG write best-effort */});
-    }
-  }
-
-  const tookOne = prevRank !== 1 && newRank === 1;
-  const defended = prevRank === 1 && newRank === 1;
-  const evt: ActivityEvent = {
-    id: Math.random().toString(36).slice(2, 10),
-    type: tookOne ? "took_one" : defended ? "defended" : "boosted",
-    entityId: e.id,
-    entityName: e.name,
-    category: categoryOf(e),
-    amount,
-    fromRank: prevRank,
-    toRank: newRank,
-    location,
-    handle,
-    ts: now,
-  };
-  activity.unshift(evt);
-  if (activity.length > 200) activity.pop();
-
-  const rankEvt: RankUpdatedEvent = {
-    type: "rank.updated",
-    entityId: e.id,
-    category: categoryOf(e),
-    prevRank,
-    newRank,
-    prevScore,
-    newScore,
-    displaced: displaced.slice(0, 12),
-    ts: now,
-  };
-
-  const pending = pendingRankEvents.get(e.id);
-  pendingRankEvents.set(e.id, pending ? {
-    ...rankEvt,
-    prevRank: pending.prevRank,
-    prevScore: pending.prevScore,
-    displaced: rankEvt.displaced,
-  } : rankEvt);
-  io.emit("activity.created", { type: "activity.created", event: evt } as const);
-
-  // celebration overlay (balloons + firecrackers) for every real bid
-  if (!isSim) {
-    io.emit("bid.celebration", {
-      type: "bid.celebration",
-      entityName: e.name,
-      amount,
-      ts: now,
-    } as const);
-  }
-
-  if (tookOne) {
-    io.emit("leader.changed", {
-      type: "leader.changed",
-      category: "global",
-      entityId: e.id,
-      entityName: e.name,
-      prevLeaderId: null,
-    } as const);
-  }
-
-  return {
-    ok: true,
-    ack: { ok: true, entityId: e.id, newRank, prevRank, newScore },
-  };
-}
-
 // ---------------- PREVIEW (rank projection without committing) ----------------
 // Returns the projected rank after a boost, PLUS how much more hype is needed
 // to reach the next rank up (so the UI can show "NEEDS +X TO REACH #N").
 function previewBoost(entityId: string, amount: number): { newRank: number; prevRank: number; newScore: number; needed: number; nextRank: number; gapToNext: number } | null {
   const e = entities.find((x) => x.id === entityId || x.slug === entityId);
   if (!e) return null;
-  const projectedScore = e.score + Math.max(1, Math.floor(amount));
+  const projectedScore = e.score + Math.max(100, Math.floor(amount)) / 100;
   // count how many entities (global) would be strictly above projectedScore, or equal-but-newer
   let above = 0;
   for (const o of entities) {
@@ -294,100 +103,19 @@ function previewBoost(entityId: string, amount: number): { newRank: number; prev
 
   // find the entity directly above (the one at rank newRank - 1 after boost)
   // and compute how much more hype is needed to overtake it
-  const sorted = [...entities].sort((a, b) => b.score - a.score || a.createdAt - b.createdAt);
+  const sorted = entities
+    .map((entity) => entity.id === e.id ? { ...entity, score: projectedScore } : entity)
+    .sort((a, b) => b.score - a.score || a.createdAt - b.createdAt);
   const myProjectedIndex = sorted.findIndex((x) => x.id === e.id);
   let nextRank = newRank;
   let gapToNext = 0;
   if (myProjectedIndex > 0) {
     const aboveEntity = sorted[myProjectedIndex - 1];
     // need to beat aboveEntity.score (or equal + older, but we can't change createdAt)
-    gapToNext = Math.max(0, aboveEntity.score - projectedScore + 1);
+    gapToNext = Math.max(0, Math.ceil((aboveEntity.score - projectedScore + 0.01) * 100));
     nextRank = aboveEntity.rank;
   }
   return { newRank, prevRank: e.rank, newScore: projectedScore, needed: gapToNext, nextRank, gapToNext };
-}
-
-// ---------------- ADD ENTITY ----------------
-// Persists to PostgreSQL via the application layer (/api/content), which goes
-// through: URL registry → platform adapter → moderation → PostgreSQL → audit.
-// Then adds the real PostgreSQL entity to the in-memory cache.
-async function addEntity(req: AddEntityRequest, socketId: string): Promise<{ ok: boolean; entity?: Entity; reason?: string }> {
-  if (!req.name?.trim()) return { ok: false, reason: "no_name" };
-  const led = ledgers.get(socketId);
-
-  // 1. persist to PostgreSQL via the application layer
-  try {
-    const apiRes = await fetch(`${API_BASE_URL}/api/content`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Outrank-Session": led?.sessionId || "",
-        "X-Request-Id": `rt-add-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      },
-      body: JSON.stringify({
-        title: req.name,
-        kind: req.kind,
-        category: req.category,
-        sub: req.sub,
-        blurb: req.blurb,
-        url: req.link,
-      }),
-    });
-    const apiData = await apiRes.json();
-    if (!apiData.ok || !apiData.content) {
-      return { ok: false, reason: apiData.reason || "api_failed" };
-    }
-    const content = apiData.content;
-
-    // 2. build the Entity shape from the PostgreSQL Content
-    const now = Date.now();
-    const palHue = Math.floor(Math.random() * 360);
-    const e: Entity = {
-      id: content.id,
-      slug: content.id,
-      name: content.title.toUpperCase(),
-      category: content.category,
-      kind: content.kind,
-      sub: content.blurb || content.sub || content.platform,
-      blurb: content.description || content.blurb || "Newly added to the board.",
-      link: content.url || req.link || undefined,
-      image: content.imageUrl || req.image || undefined,
-      score: 1000 + Math.floor(Math.random() * 800),
-      supporters: 1,
-      prevRank: entities.length + 1,
-      rank: entities.length + 1,
-      peakRank: entities.length + 1,
-      momentum: 0,
-      history: [{ t: now, rank: entities.length + 1, score: 1000 }],
-      createdAt: new Date(content.createdAt).getTime(),
-      poster: { hue: palHue, accent: "#ff3b1f", tag: String(content.kind).toUpperCase().slice(0, 4) },
-    };
-    entities.push(e);
-    recomputeAllRanks();
-
-    // 3. emit events
-    const evt: ActivityEvent = {
-      id: Math.random().toString(36).slice(2, 10),
-      type: "added",
-      entityId: e.id,
-      entityName: e.name,
-      category: e.category,
-      amount: 0,
-      fromRank: e.rank,
-      toRank: e.rank,
-      location: led?.location ?? "—",
-      handle: led?.handle ?? "anon",
-      ts: now,
-    };
-    activity.unshift(evt);
-    if (activity.length > 200) activity.pop();
-    io.emit("activity.created", { type: "activity.created", event: evt } as const);
-    io.emit("entity.added", { type: "entity.added", entity: e } as const);
-    return { ok: true, entity: e };
-  } catch (err) {
-    console.error("[addEntity] failed to persist to PostgreSQL:", err);
-    return { ok: false, reason: "api_unreachable" };
-  }
 }
 
 // ---------------- STATE SNAPSHOT ----------------
@@ -415,11 +143,8 @@ const httpServer = createServer((_req: IncomingMessage, res: ServerResponse) => 
 });
 
 const restServer = createServer((req: IncomingMessage, res: ServerResponse) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") {
-    res.writeHead(204);
+    res.writeHead(405);
     res.end();
     return;
   }
@@ -451,19 +176,8 @@ const restServer = createServer((req: IncomingMessage, res: ServerResponse) => {
     return;
   }
   if (req.url === "/add" && req.method === "POST") {
-    let body = "";
-    req.on("data", (c) => (body += c));
-    req.on("end", async () => {
-      try {
-        const data = JSON.parse(body) as AddEntityRequest & { socketId?: string };
-        const r = await addEntity(data, data.socketId || "http");
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(r));
-      } catch {
-        res.writeHead(400);
-        res.end(JSON.stringify({ ok: false, reason: "bad_json" }));
-      }
-    });
+    res.writeHead(410, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false, reason: "payment_required" }));
     return;
   }
   res.writeHead(404);
@@ -472,10 +186,29 @@ const restServer = createServer((req: IncomingMessage, res: ServerResponse) => {
 
 const io = new Server(httpServer, {
   path: "/",
-  cors: { origin: "*", methods: ["GET", "POST"] },
+  cors: {
+    origin(origin, callback) {
+      callback(null, !origin || SOCKET_ORIGINS.has(origin));
+    },
+    methods: ["GET", "POST"],
+  },
   pingTimeout: 60000,
   pingInterval: 25000,
 });
+
+function applyEntityUpdate(update: { id: string; title?: string; blurb?: string; description?: string; platform?: string; url?: string }) {
+  const current = entities.find((entity) => entity.id === update.id);
+  if (!current) return;
+  const entity = {
+    ...current,
+    name: update.title ? update.title.toUpperCase() : current.name,
+    sub: update.blurb || update.description || update.platform || current.sub,
+    blurb: update.description || update.blurb || current.blurb,
+    link: update.url || current.link,
+  };
+  entities = entities.map((item) => item.id === update.id ? entity : item);
+  io.emit("entity.updated", { type: "entity.updated", entity: { id: entity.id, name: entity.name, sub: entity.sub, blurb: entity.blurb, link: entity.link } });
+}
 
 const redisAdapterReady = (async () => {
   try {
@@ -486,6 +219,19 @@ const redisAdapterReady = (async () => {
     subClient.on("error", () => {});
     await Promise.all([pubClient.connect(), subClient.connect()]);
     io.adapter(createAdapter(pubClient, subClient));
+    await subClient.subscribe("outrank:entity-updated", (message) => {
+      try { applyEntityUpdate(JSON.parse(message) as { id: string; title?: string; blurb?: string; description?: string; platform?: string; url?: string }); } catch { /* ignore malformed internal events */ }
+    });
+    await subClient.subscribe("outrank:leaderboard-updated", async () => {
+      try {
+        entities = await hydrateFromPostgres();
+        io.emit("snapshot", { type: "snapshot", state: snapshot() } as const);
+        io.emit("leaderboard.invalidate", { type: "leaderboard.invalidate", ts: Date.now() });
+      } catch {
+        // The browser also refetches periodically, so a transient refresh
+        // failure cannot make Redis authoritative.
+      }
+    });
     redisAdapterEnabled = true;
     console.log("[realtime] Redis Socket.IO adapter enabled");
   } catch {
@@ -493,40 +239,11 @@ const redisAdapterReady = (async () => {
   }
 })();
 
-// A short Redis lease prevents every realtime replica from generating its own
-// synthetic traffic. The lease expires automatically if the leader crashes.
-async function withSimulatorLease(run: () => void): Promise<void> {
-  const redis = await getRedis();
-  if (!redis) {
-    run();
-    return;
-  }
-  try {
-    const acquired = await redis.set(SIMULATOR_LEASE_KEY, INSTANCE_ID, { NX: true, PX: 4_000 });
-    if (acquired === "OK") run();
-  } catch {
-    // Preserve local development behavior if Redis temporarily disappears.
-    run();
-  }
-}
-
 io.on("connection", (socket) => {
   presence += 1;
   const handle = pick(HANDLES) + Math.floor(Math.random() * 90 + 10);
   const location = pick(SEED_LOCATIONS);
-  ledgers.set(socket.id, { handle, location, sessionId: undefined });
-
-  // create a PostgreSQL session via the application layer (best-effort, no auth)
-  fetch(`${API_BASE_URL}/api/session`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ handle, location }),
-  }).then((r) => r.json()).then((data) => {
-    if (data.sessionId) {
-      const led = ledgers.get(socket.id);
-      if (led) led.sessionId = data.sessionId;
-    }
-  }).catch(() => {/* best-effort */});
+  ledgers.set(socket.id, { handle, location });
 
   socket.emit("snapshot", { type: "snapshot", state: snapshot() } as const);
   io.emit("presence.updated", { type: "presence.updated", count: presence, fighting } as const);
@@ -535,7 +252,6 @@ io.on("connection", (socket) => {
     const refreshed = await hydrateFromPostgres();
     if (refreshed.length > 0) {
       entities = refreshed;
-      recomputeAllRanks();
     }
     const since = Number.isFinite(req?.since) ? Math.max(0, Number(req.since)) : 0;
     const missedActivity = activity.filter((event) => event.ts > since).slice(0, 60);
@@ -560,9 +276,8 @@ io.on("connection", (socket) => {
     if (ackFn) ackFn(r);
   });
 
-  socket.on("add", async (req: AddEntityRequest, ackFn?: (r: any) => void) => {
-    const r = await addEntity(req, socket.id);
-    if (ackFn) ackFn(r);
+  socket.on("add", (_req: AddEntityRequest, ackFn?: (r: any) => void) => {
+    if (ackFn) ackFn({ ok: false, reason: "payment_required" });
   });
 
   socket.on("set_handle", (h: { handle: string; location: string }) => {
@@ -580,48 +295,14 @@ io.on("connection", (socket) => {
   });
 });
 
-// ---------------- AUTO SIMULATOR ----------------
-// Keeps the board alive: random boosts every ~2.5–4.5s
-function scheduleSim() {
-  const delay = 2500 + Math.random() * 2000;
-  setTimeout(() => {
-    void withSimulatorLease(() => {
-      // bias toward mid-board entities to create visible movement
-      const pool = entities.filter((e) => e.rank > 1 && e.rank < entities.length);
-      if (pool.length) {
-        const e = pick(pool);
-        const amt = 1 + Math.floor(Math.random() * Math.random() * 600);
-        applyBoost({ entityId: e.id, amount: amt }, "sim", true);
-      }
-    });
-    scheduleSim();
-  }, delay);
-}
-scheduleSim();
-
-// occasional bigger swings — target ranks 2..8 (exclude #1) so #1 is contestable
-setInterval(() => {
-  void withSimulatorLease(() => {
-    const challengers = entities.filter((e) => e.rank >= 2 && e.rank <= 8);
-    if (challengers.length) {
-      const e = pick(challengers);
-      const amt = 600 + Math.floor(Math.random() * 2600);
-      applyBoost({ entityId: e.id, amount: amt }, "sim", true);
-    }
-  });
-}, 9000);
-
 const WSPORT = 3003;
 const RESTPORT = 3004;
 
-// hydrate from PostgreSQL (source of truth) on boot, then recompute ranks
-// and start the sim + servers. If PostgreSQL is empty, falls back to static seed.
+// Hydrate from PostgreSQL (source of truth) on boot. No simulator or local
+// score mutation is allowed in production: only settled payment data ranks.
 hydrateFromPostgres().then((hydrated) => {
   entities.push(...hydrated);
-  const now = Date.now();
-  for (const entity of entities) if (entity.score > 0) boostLog.set(entity.id, [{ amount: entity.score, ts: now }]);
-  recomputeAllRanks();
-  console.log(`[boot] ${entities.length} entities hydrated, ranks computed`);
+  console.log(`[boot] ${entities.length} entities hydrated from canonical API`);
 }).catch((e) => {
   console.error("[boot] hydration failed, starting with empty state:", e);
 }).finally(async () => {

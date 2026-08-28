@@ -3,10 +3,12 @@
 // in memory for speed; this service is the canonical read.
 
 import { container } from "./container";
-import type { Category, Content, OrganicRanking } from "../domain/types";
+import type { Category, Content } from "../domain/types";
 
 export interface LeaderboardEntry {
   content: Content;
+  backedCents: number;
+  bidCount: number;
   rank: number;
   score: number;
   momentum: number;
@@ -27,53 +29,43 @@ export interface LeaderboardView {
 
 export type LeaderboardTimeframe = "today" | "alltime";
 
-export async function fetchLeaderboard(category: Category = "global", options: { limit?: number; cursor?: number; timeframe?: LeaderboardTimeframe } = {}): Promise<LeaderboardView> {
+type LeaderboardCursor = { score: number; createdAt: string; id: string };
+
+function decodeCursor(value?: string): LeaderboardCursor | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as LeaderboardCursor;
+    if (!Number.isFinite(parsed.score) || !parsed.createdAt || !parsed.id) return undefined;
+    return parsed;
+  } catch { return undefined; }
+}
+
+function encodeCursor(cursor: { score: number; createdAt: Date; id: string }): string {
+  return Buffer.from(JSON.stringify({ score: cursor.score, createdAt: cursor.createdAt.toISOString(), id: cursor.id })).toString("base64url");
+}
+
+export async function fetchLeaderboard(category: Category = "global", options: { limit?: number; cursor?: string; timeframe?: LeaderboardTimeframe } = {}): Promise<LeaderboardView> {
   const { repos } = container;
   const limit = Math.min(48, Math.max(1, options.limit ?? 48));
-  const cursor = Math.max(0, options.cursor ?? 0);
   const timeframe = options.timeframe ?? "alltime";
 
-  // get all live content
-  const contents = await repos.content.listAll("live");
-  // latest organic snapshots
-  const snapshots = await repos.ranking.latestOrganicByCategory(category);
+  const cursor = decodeCursor(options.cursor);
+  const page = await repos.ranking.rankedContentPage({ category, timeframe, limit, cursor: cursor ? { score: cursor.score, createdAt: new Date(cursor.createdAt), id: cursor.id } : undefined });
 
-  // build a score map from snapshots (global scope = all snapshots; category scope = filtered)
-  const scoreMap = new Map<string, { score: number; momentum: number }>();
-  for (const s of snapshots) {
-    scoreMap.set(s.contentId, { score: s.score, momentum: s.momentum });
-  }
-
-  // filter + sort
-  const scoped = category === "global" ? contents : contents.filter(c => c.category === category);
-  const rankingCategory = category === "global" ? "global" : category;
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayBaselines = timeframe === "today"
-    ? new Map((await Promise.all(scoped.map(async (c) => [c.id, await repos.ranking.organicAtOrBefore(c.id, rankingCategory, todayStart)] as const))).filter(([, snapshot]) => snapshot))
-    : new Map<string, OrganicRanking | null>();
-  const ranked = scoped
-    .map(c => ({
-      content: c,
-      score: timeframe === "today"
-        ? Math.max(0, (scoreMap.get(c.id)?.score ?? 1000) - (todayBaselines.get(c.id)?.score ?? 1000))
-        : scoreMap.get(c.id)?.score ?? 0,
-      momentum: scoreMap.get(c.id)?.momentum ?? 0,
-    }))
-    .sort((a, b) => b.score - a.score || a.content.createdAt.getTime() - b.content.createdAt.getTime());
 
   // Paginate before loading per-entity history so large boards do not hydrate
   // history for rows that will never be sent to the client.
   const entries: LeaderboardEntry[] = [];
-  const page = ranked.slice(cursor, cursor + limit);
-  for (let pageIndex = 0; pageIndex < page.length; pageIndex++) {
-    const rank = cursor + pageIndex + 1;
-    const r = page[pageIndex];
-    const history = await repos.ranking.organicHistory(r.content.id, 24);
+  for (let pageIndex = 0; pageIndex < page.rows.length; pageIndex++) {
+    const r = page.rows[pageIndex];
+    const rank = r.rank;
+    const history = await repos.ranking.organicHistory(r.content.id, 24, category);
     const peakRank = history.length ? Math.min(...history.map(h => h.rank)) : rank;
     const prevRank = history.length >= 2 ? history[history.length - 2].rank : rank;
     entries.push({
       content: r.content,
+      backedCents: r.backedCents,
+      bidCount: r.bidCount,
       rank,
       score: r.score,
       momentum: r.momentum,
@@ -89,8 +81,8 @@ export async function fetchLeaderboard(category: Category = "global", options: {
     totalBoosts: 0, // filled by realtime cache
     presence: 0,    // filled by realtime cache
     ts: Date.now(),
-    nextCursor: cursor + limit < ranked.length ? String(cursor + limit) : undefined,
-    total: ranked.length,
+    nextCursor: page.nextCursor ? encodeCursor(page.nextCursor) : undefined,
+    total: page.total,
   };
 }
 

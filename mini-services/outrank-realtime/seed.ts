@@ -124,7 +124,7 @@ export function buildSeed(): Entity[] {
     // small per-entity jitter so initial sort isn't exactly the input order
     const score = s.base + Math.floor((Math.sin(i * 9.13) + 1) * 1200) - 600;
     // build a synthetic 24h history (24 hourly points), drifting around current
-    const history = [];
+    const history: Entity["history"] = [];
     for (let h = 23; h >= 0; h--) {
       const drift = Math.round(Math.sin(i * 3.7 + h) * (h * 6) + (Math.random() - 0.5) * 4);
       history.push({

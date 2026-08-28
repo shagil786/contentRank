@@ -38,14 +38,16 @@ function sameOrigin(req: NextRequest): boolean {
 // rate limiting. Returns either a context or a NextResponse (error).
 export async function prepareApiContext(
   req: NextRequest,
-  rateLimitName: keyof typeof RATE_LIMITS = "general"
+  rateLimitName: keyof typeof RATE_LIMITS = "general",
+  options: { createSessionForWrite?: boolean } = {}
 ): Promise<{ ctx: RequestContext } | { error: NextResponse }> {
   const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
   const suppliedTraceId = req.headers.get("x-trace-id")?.trim();
   const traceId = suppliedTraceId && /^[A-Za-z0-9._:-]{8,200}$/.test(suppliedTraceId) ? suppliedTraceId : crypto.randomUUID();
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || undefined;
+  const safeMethod = ["GET", "HEAD", "OPTIONS"].includes(req.method);
 
-  if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !sameOrigin(req)) {
+  if (!safeMethod && !sameOrigin(req)) {
     logger.warn("http.request_rejected", { requestId, method: req.method, path: req.nextUrl.pathname, reason: "csrf_failed" });
     return {
       error: NextResponse.json(
@@ -55,13 +57,12 @@ export async function prepareApiContext(
     };
   }
 
-  // session: from header or cookie (lightweight — no NextAuth for prototype)
-  let sessionId = req.headers.get("x-outrank-session") || undefined;
+  // Anonymous identity is persisted in an HttpOnly cookie. Read-only requests
+  // must not create database rows: crawlers and polling endpoints otherwise
+  // generate an unbounded Session table even though they never perform a write.
+  let sessionId = req.headers.get("x-outrank-session") || req.cookies.get("outrank_session")?.value || undefined;
   let session = sessionId ? await container.repos.session.findById(sessionId) : null;
-  if (!session) {
-    session = await container.repos.session.create();
-    sessionId = session.id;
-  }
+  if (!session) sessionId = undefined;
 
   // A session is intentionally created for anonymous visitors, so using it
   // as the only key lets a caller rotate sessions and bypass write limits.
@@ -77,6 +78,14 @@ export async function prepareApiContext(
         { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)), "X-Request-Id": requestId } }
       ),
     };
+  }
+
+  // Create one anonymous identity only when a write actually needs it. This
+  // happens after rate limiting so abusive callers cannot fill the database by
+  // repeatedly rotating or omitting session identifiers.
+  if (!safeMethod && !sessionId && options.createSessionForWrite !== false) {
+    session = await container.repos.session.create();
+    sessionId = session.id;
   }
 
   const ctx = newRequestContext({ requestId, traceId, actor: sessionId, session: sessionId, ip, startedAt: Date.now() });
@@ -119,7 +128,7 @@ const idempotencyInFlight = new Map<string, Promise<unknown>>();
 export function jsonResponse(body: unknown, status = 200, init?: { sessionId?: string; requestId?: string }) {
   const traceId = init?.requestId ? traceIdFor(init.requestId) : undefined;
   if (init?.requestId) finishRequest(init.requestId, status);
-  return NextResponse.json(body, {
+  const response = NextResponse.json(body, {
     status,
     headers: {
       "X-Request-Id": init?.requestId || crypto.randomUUID(),
@@ -128,4 +137,14 @@ export function jsonResponse(body: unknown, status = 200, init?: { sessionId?: s
       "Cache-Control": "no-store",
     },
   });
+  if (init?.sessionId) {
+    response.cookies.set("outrank_session", init.sessionId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+  }
+  return response;
 }

@@ -53,7 +53,10 @@ export function LeaderboardRow({ entity, index, onBoost, lastUpdateTs }: Props) 
     <motion.div
       layout
       layoutId={`row-${entity.id}`}
-      initial={{ opacity: 0, y: 8 }}
+      // Rank updates can move an entity between the top-three treatment and
+      // the regular list. Keep the component mounted visually stable in that
+      // case; Framer Motion's layout animation still handles the movement.
+      initial={false}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ layout: { type: "spring", stiffness: 520, damping: 42, mass: 0.7 }, default: { duration: 0.4 } }}
@@ -145,7 +148,7 @@ export function LeaderboardRow({ entity, index, onBoost, lastUpdateTs }: Props) 
                     exit={{ opacity: 0, y: -6 }}
                     className="flex items-center gap-3 font-mono text-[10px] tracking-widest"
                   >
-                    <span className={isTop ? "text-signal" : "text-muted-foreground"}>{formatScore(entity.supporters)} BACKERS</span>
+                    <span className={isTop ? "text-signal" : "text-muted-foreground"}>{entity.supporters.toLocaleString()} BACKERS</span>
                     <span className={isTop ? "text-paper/50" : "text-muted-foreground"}>PEAK #{String(entity.peakRank).padStart(2, "0")}</span>
                     {entity.momentum !== 0 && (
                       <span className={entity.momentum > 0 ? "text-up" : "text-down"}>

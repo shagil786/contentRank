@@ -126,7 +126,7 @@ function BattleSide({
             <ScoreCounter value={entity.score} className="font-mono font-semibold text-lg" />
             <span className="font-mono text-[10px] text-muted-foreground">BACKED</span>
           </div>
-          <div className="font-mono text-[10px] tracking-widest text-muted-foreground">{formatScore(entity.supporters)} BACKERS</div>
+          <div className="font-mono text-[10px] tracking-widest text-muted-foreground">{entity.supporters.toLocaleString()} BACKERS</div>
           <div className="flex gap-2 mt-2">
             <button
               onClick={onPick}

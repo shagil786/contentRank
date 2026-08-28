@@ -7,6 +7,8 @@ import { container } from "./container";
 import { audit } from "../infrastructure/request-context";
 import type { RequestContext } from "../infrastructure/request-context";
 import { randomUUID } from "crypto";
+import { CheckoutCreationError } from "../adapters/payments/interface";
+import { captureServerEvent } from "../infrastructure/analytics";
 
 export interface CreateBidInput {
   contentId: string;
@@ -17,6 +19,9 @@ export interface CreateBidInput {
   cancelUrl?: string;
   idempotencyKey?: string;
   testMode?: boolean;
+  analyticsDistinctId?: string;
+  analyticsSessionId?: string;
+  analyticsFlow?: "initial_bid" | "defend";
 }
 
 export interface CreateBidResult {
@@ -46,19 +51,14 @@ export async function createSponsoredBid(
   const idempotencyKey = input.idempotencyKey || `${ctx.requestId}:${input.contentId}:${input.amount}`;
   const existingBid = await repos.ranking.findBidByIdempotencyKey(idempotencyKey);
   if (existingBid) {
-    const existingPayment = existingBid.paymentId ? await repos.payment.findById(existingBid.paymentId) : null;
-    return {
-      ok: true,
-      bidId: existingBid.id,
-      paymentId: existingPayment?.id,
-      checkoutUrl: existingPayment ? `/checkout?payment=${existingPayment.id}&bid=${existingBid.id}&amount=${existingBid.amount}` : undefined,
-    };
+    return { ok: false, reason: "duplicate_checkout_request", bidId: existingBid.id, paymentId: existingBid.paymentId };
   }
 
   // create the bid (pending)
   const bid = await repos.ranking.appendBid({
     contentId: input.contentId,
     amount: input.amount,
+    refundedAmount: 0,
     currency: input.currency || "usd",
     status: "pending",
     idempotencyKey,
@@ -67,20 +67,63 @@ export async function createSponsoredBid(
   });
 
   // initiate payment via Dodo
-  const checkout = await adapters.payments.dodo.createCheckout({
-    amount: input.amount,
-    currency: input.currency || "usd",
-    contentId: input.contentId,
-    bidId: bid.id,
-    idempotencyKey,
-    successUrl: input.successUrl || "/?bid=success",
-    cancelUrl: input.cancelUrl || "/?bid=cancel",
-    description: `OUTRANK sponsored bid — ${content.title}`,
-    mode: input.testMode ? "test" : "live",
-  });
+  let checkout;
+  try {
+    checkout = await adapters.payments.dodo.createCheckout({
+      amount: input.amount,
+      currency: input.currency || "usd",
+      contentId: input.contentId,
+      bidId: bid.id,
+      idempotencyKey,
+      successUrl: input.successUrl || "/?bid=success",
+      cancelUrl: input.cancelUrl || "/?bid=cancel",
+      description: `OUTRANK sponsored bid — ${content.title}`,
+      mode: input.testMode ? "test" : "live",
+      analyticsDistinctId: input.analyticsDistinctId,
+      analyticsSessionId: input.analyticsSessionId,
+      analyticsFlow: input.analyticsFlow,
+    });
+  } catch (error) {
+    const paymentId = error instanceof CheckoutCreationError ? error.paymentId : undefined;
+    await repos.ranking.updateBidStatus(bid.id, "failed", paymentId);
+    await audit(ctx, "bid.checkout_failed", "bid", bid.id, {
+      contentId: input.contentId,
+      amount: input.amount,
+      currency: input.currency || "usd",
+      paymentId,
+    });
+    if (input.analyticsDistinctId) {
+      await captureServerEvent({
+        distinctId: input.analyticsDistinctId,
+        event: "checkout_failed",
+        properties: {
+          flow: input.analyticsFlow || "defend",
+          content_id: input.contentId,
+          amount_cents: input.amount,
+          currency: input.currency || "usd",
+          failure_stage: "checkout_creation",
+        },
+      });
+    }
+    throw error;
+  }
 
   // link bid → payment
   await repos.ranking.updateBidStatus(bid.id, "pending", checkout.paymentId);
+
+  if (input.analyticsDistinctId) {
+    await captureServerEvent({
+      distinctId: input.analyticsDistinctId,
+      event: "checkout_started",
+      properties: {
+        flow: input.analyticsFlow || "defend",
+        content_id: input.contentId,
+        amount_cents: input.amount,
+        currency: input.currency || "usd",
+        test_mode: input.testMode === true,
+      },
+    });
+  }
 
   await audit(ctx, "bid.create", "bid", bid.id, {
     contentId: input.contentId, amount: input.amount, currency: input.currency || "usd",

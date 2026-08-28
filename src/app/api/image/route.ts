@@ -1,20 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { assertSafeRemoteHttpUrl } from "@/server/infrastructure/safe-remote-url";
 
 export const dynamic = "force-dynamic";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8_000;
-
-function isBlockedHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/\.$/, "");
-  if (host === "localhost" || host === "ip6-localhost" || host === "metadata.google.internal") return true;
-  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return true;
-
-  const octets = host.split(".").map(Number);
-  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false;
-  const [first, second] = octets;
-  return first === 10 || first === 127 || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
-}
 
 export async function GET(req: NextRequest) {
   const rawUrl = req.nextUrl.searchParams.get("url");
@@ -27,7 +17,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "invalid_url" }, { status: 400 });
   }
 
-  if (!['http:', 'https:'].includes(target.protocol) || isBlockedHost(target.hostname)) {
+  try {
+    target = await assertSafeRemoteHttpUrl(target);
+  } catch {
     return NextResponse.json({ ok: false, reason: "blocked_url" }, { status: 400 });
   }
 

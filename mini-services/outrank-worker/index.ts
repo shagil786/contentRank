@@ -9,40 +9,42 @@ import { createServer } from "http";
 // In production this would be a separate package; here it shares src/.
 import { container } from "../../src/server/application/container";
 import { fetchLeaderboard } from "../../src/server/application/fetch-leaderboard";
-import { computeSponsoredRanking } from "../../src/server/domain/ranking/sponsored";
-import { newRequestContext } from "../../src/server/infrastructure/request-context";
 import { sendResendEmail } from "../../src/server/infrastructure/email";
 import { stableUnsubscribeToken } from "../../src/server/infrastructure/subscription-tokens";
 import { captureServerError } from "../../src/server/infrastructure/error-tracker";
+import { newRequestContext } from "../../src/server/infrastructure/request-context";
+import { reconcilePayment } from "../../src/server/application/confirm-payment";
+import type { Category } from "../../src/server/domain/types";
 
 // ---- Jobs ----
 
-// 1. Ranking recalculation — recompute organic ranks from latest scores.
-//    Writes fresh OrganicRanking snapshots so history is preserved.
+// 1. Ranking history — snapshot the canonical settled-bid board. The
+// OrganicRanking table is retained as a historical snapshot store, but it is
+// no longer the source of the paid score.
 async function jobRankingRecalc() {
   const { repos } = container;
-  const ctx = newRequestContext({ actor: "worker:ranking-recalc" });
   try {
     const contents = await repos.content.listAll("live");
-    // global recompute: read latest score per content, sort, write snapshot
-    const scored = [];
-    for (const c of contents) {
-      const h = await repos.ranking.organicHistory(c.id, 1);
-      const latest = h[h.length - 1];
-      scored.push({ content: c, score: latest?.score ?? 1000 });
-    }
-    scored.sort((a, b) => b.score - a.score || a.content.createdAt.getTime() - b.content.createdAt.getTime());
-    for (let i = 0; i < scored.length; i++) {
-      const s = scored[i];
-      await repos.ranking.appendOrganicSnapshot({
-        contentId: s.content.id,
-        category: "global",
-        rank: i + 1,
-        score: s.score,
-        momentum: 0,
+    const categories = new Set<Category>(["global", ...contents.map((content) => content.category)]);
+    let snapshotCount = 0;
+    for (const category of categories) {
+      const board = await repos.ranking.rankedContentPage({
+        category,
+        timeframe: "alltime",
+        limit: Math.max(1, contents.length),
       });
+      for (const entry of board.rows) {
+        await repos.ranking.appendOrganicSnapshot({
+          contentId: entry.content.id,
+          category,
+          rank: entry.rank,
+          score: Math.round(entry.score),
+          momentum: entry.momentum,
+        });
+        snapshotCount++;
+      }
     }
-    console.log(`[worker] ranking recalc: ${scored.length} entries ranked`);
+    console.log(`[worker] ranking history: ${snapshotCount} snapshots written`);
   } catch (e) {
     console.error("[worker] ranking recalc failed:", e);
   }
@@ -97,13 +99,39 @@ async function jobModerationReview() {
 
 // 4. Payment reconciliation — check for stuck "initiated" payments older than 1h.
 async function jobPaymentReconciliation() {
-  // In production: query Dodo API for payment status. Stub: just log.
-  console.log("[worker] payment reconciliation: stub (would poll Dodo for stuck payments)");
+  const now = Date.now();
+  const candidates = await container.repos.payment.listForReconciliation({
+    initiatedBefore: new Date(now - 15 * 60_000),
+    recheckBefore: new Date(now - 24 * 60 * 60_000),
+    limit: 25,
+  });
+  let reconciled = 0;
+  let processing = 0;
+  let failed = 0;
+  for (const payment of candidates) {
+    const ctx = newRequestContext({ actor: "worker:payment-reconciliation" });
+    try {
+      const result = await reconcilePayment(payment.id, ctx);
+      if (result.reason === "processing") processing++;
+      else if (result.ok) reconciled++;
+      else failed++;
+    } catch (error) {
+      failed++;
+      captureServerError("worker.payment_reconciliation_failed", error, {
+        paymentId: payment.id,
+        providerPaymentId: payment.providerPaymentId,
+        attempt: payment.reconciliationAttempts + 1,
+      });
+    }
+  }
+  console.log(`[worker] payment reconciliation: ${reconciled} reconciled, ${processing} processing, ${failed} failed`);
 }
 
-// 5. Retry / dead-letter — in production this reads from a Redis queue.
+// 5. Retry / dead-letter — payment retries are driven by durable PostgreSQL
+// reconciliation state and Dodo webhook redelivery. Other worker jobs are
+// individually idempotent and report errors through captureServerError.
 async function jobRetryDeadLetter() {
-  console.log("[worker] retry/dead-letter: stub (would process failed jobs from Redis queue)");
+  console.log("[worker] retry/dead-letter: payment retries handled by reconciliation; no queued dead letters");
 }
 
 function escapeHtml(value: string) {

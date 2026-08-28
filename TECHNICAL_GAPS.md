@@ -17,15 +17,9 @@ below are what stand between "working prototype" and "production marketplace".
 - **Resolved**: Prisma now uses PostgreSQL, with a reproducible Docker setup in `compose.yaml`, a local Postgres instance on port 5433, and the app services running against it.
 - **Migration note**: production still requires a managed Postgres provider and secret-managed `DATABASE_URL`; the local container is the development/staging baseline.
 
-### 1.2 Shared Redis for rate limits/idempotency and Socket.IO — partially resolved 2026-08-24
-- **Resolved**: `src/server/infrastructure/rate-limiter.ts` and `idempotency.ts` now use Redis when `REDIS_URL` is configured, with an in-process fallback for local resilience. The realtime engine also uses `@socket.io/redis-adapter` for cross-instance event broadcast. The local Docker baseline is defined in `compose.yaml`.
-- **Remaining**: the realtime engine's canonical entity state, presence, and activity still use in-process `Map`s. Each realtime replica would therefore still maintain its own board state and watcher counts.
-- **Why it matters**: rate limits and idempotent retries are now shared across Next.js
-  workers, but presence and "watching now" counts remain per-process undercounts and
-  realtime replicas can still diverge on entity mutations.
-- **Next step**: move canonical realtime entities, presence, and activity into Redis
-  (or another shared authoritative store), then add replica-safe simulator/worker
-  ownership and reconciliation.
+### 1.2 Shared Redis for rate limits/idempotency and Socket.IO — resolved for one-instance launch 2026-08-27
+- **Resolved**: rate limits and idempotency use Redis when configured, Socket.IO uses the Redis adapter, and PostgreSQL settled bids are the only authority for rank and money. Realtime hydrates from and invalidates the canonical API; it no longer simulates or mutates backing.
+- **Remaining scale concern**: presence and recent activity are process-local. This affects watcher counts only when multiple realtime replicas are introduced; it cannot change durable rank or dollars.
 
 ### 1.3 Same-origin image proxy and caching — partially resolved 2026-08-24
 - **Resolved**: remote `og:image` URLs now flow through `/api/image`, which validates
@@ -39,41 +33,19 @@ below are what stand between "working prototype" and "production marketplace".
 - **Next step**: fetch and store approved images in object storage (S3/R2 or equivalent)
   at submit time, then serve immutable resized variants through a production CDN.
 
-### 1.4 Horizontal scaling and realtime ownership — partially resolved 2026-08-24
-- **Resolved**: Socket.IO broadcast uses the Redis adapter, and synthetic realtime
-  traffic now uses a short Redis leader lease so multiple replicas do not all run the
-  simulator. The realtime REST service exposes `/health` with instance and adapter
-  status for load-balancer checks.
-- **Remaining**: `mini-services/outrank-realtime` still keeps entity mutations,
-  presence, activity, and boost history in process-local memory. Replicas therefore
-  still need shared canonical state and sticky/session-aware routing before production
-  horizontal scaling.
-- **Why it matters**: the realtime engine is still the canonical source of the live
-  board. Without shared mutable state, a load balancer can route clients to replicas
-  with divergent scores, presence, and activity.
-- **Next step**: externalize entities, presence, activity, and boost history to Redis
-  or PostgreSQL-backed commands, then deploy replicas behind a sticky-session load
-  balancer (Caddy `lb_policy ip_hash` or a dedicated LB).
+### 1.4 Horizontal scaling and realtime ownership — deferred scale enhancement
+- **Resolved**: PostgreSQL is canonical, Redis broadcasts invalidations, and synthetic backing/rank mutation has been removed. A realtime replica cannot overwrite the paid board.
+- **Remaining**: the current cheapest deployment is one EC2 instance in one region. Multi-instance presence aggregation, load balancing, and cross-region failover remain future reliability work, not correctness requirements for the MVP.
 
 ---
 
 ## 2. Data & Persistence
 
-### 2.1 Time-decay on scores — resolved 2026-08-24
-- **Resolved**: the realtime engine tracks timestamped boosts, applies a 24-hour full-weight window, linearly decays backing to a 50% residual over seven days, and reranks every 30 seconds.
-- **Follow-up**: durable decay/audit columns on `OrganicRanking` remain a future persistence enhancement.
+### 2.1 Automatic score decay — intentionally removed 2026-08-27
+- **Decision**: paid backing never changes by timer or simulator. All Time sums remaining settled bid value; Today sums bids settled since local day start. Refunds are the only operation that reduces paid backing.
 
-### 2.2 Cursor pagination on leaderboard — partially resolved 2026-08-24
-- **Resolved**: `/api/leaderboard` and the realtime `/state` endpoint now accept
-  bounded `limit` (maximum 48) and numeric `cursor` parameters, return `nextCursor`
-  and `total`, and paginate before loading per-entity ranking history. The frontend
-  requests only its visible 48-row page by default.
-- **Remaining**: the repository still reads and sorts all live content before slicing;
-  a database-level keyset query is needed when the board becomes very large.
-- **Why it matters**: the client payload and history hydration are now bounded, but
-  the server still pays the full list/sort cost for each request.
-- **Next step**: add a stable `(score, createdAt, id)` keyset query in PostgreSQL and
-  build an infinite-scroll/load-more UI around `nextCursor`.
+### 2.2 Cursor pagination on leaderboard — resolved 2026-08-27
+- **Resolved**: PostgreSQL performs stable keyset ranking by remaining settled bid value, creation time, and ID. The API returns bounded pages and the frontend loads additional pages through infinite scrolling.
 
 ### 2.3 No data migration strategy — resolved 2026-08-24
 - **Resolved**: PostgreSQL is now managed through the checked-in `prisma/migrations/20260823234548_init/migration.sql` baseline. Deployments should use `prisma migrate deploy`; `db push` is no longer the production path.
@@ -122,11 +94,8 @@ below are what stand between "working prototype" and "production marketplace".
   in real traffic; only introduce CAPTCHA or identity-based quotas when the product
   requires that tradeoff.
 
-### 3.3 Webhook HMAC verification — resolved 2026-08-24
-- **Resolved**: `src/server/adapters/payments/dodo.ts` computes HMAC-SHA256 over the
-  raw body, supports hex/base64 signatures and an optional `sha256=` prefix, compares
-  with `timingSafeEqual`, and rejects missing or invalid secrets/signatures. The route
-  returns `401` for signature failures and `503` when the server secret is not configured.
+### 3.3 Webhook signature verification — resolved 2026-08-27
+- **Resolved**: `src/server/adapters/payments/dodo.ts` verifies Dodo's Standard Webhooks ID, timestamp, raw body, and versioned signature with `standardwebhooks`, including replay-window enforcement. It accepts separately configured test and live signing secrets and rejects missing, stale, or invalid signatures.
 - **Operational requirement**: `DODO_WEBHOOK_SECRET` must be supplied through secret
   management in every deployed environment; it is never committed to source.
 
@@ -246,59 +215,34 @@ below are what stand between "working prototype" and "production marketplace".
 
 ## 5. Payment
 
-### 5.1 Dodo checkout — test configuration partially complete (2026-08-24)
-- **Resolved**: Dodo Test Mode now has an `OUTRANK Boost` one-time product at
-  `$1 USD` with product ID `pdt_0Nm5MbuqCwASLh6uyy6GO`.
-- **Resolved**: the adapter now calls Dodo's hosted `/checkouts` API with the
-  configured product, variable bid amount, idempotency key, return/cancel URLs,
-  and internal metadata, then persists the provider payment/session ID.
-- **Still open**: the generated Test Mode API key must be copied by the user into
-  the runtime secret environment; `.env` was intentionally not changed. A full
-  sandbox payment plus webhook round trip remains to be verified before live use.
+### 5.1 Dodo checkout — code complete; merchant activation external (2026-08-27)
+- **Resolved**: test/live credentials and products are isolated, variable USD bids use hosted checkout, return URLs carry no customer/payment details, and only verified webhooks publish or rank content. Test checkout and webhook flows have been exercised.
+- **External**: live checkout remains intentionally blocked until Dodo completes merchant activation. No code workaround is appropriate.
 
 ### 5.2 Idempotency on bid creation — resolved 2026-08-24
 - **Resolved**: `/api/bids/checkout` now caches retries with `withIdempotency`, passes the caller's `Idempotency-Key` into the application service, and checks the unique `SponsoredBid.idempotencyKey` in the database before creating a new bid.
 - **Verification**: the database-backed lookup protects retries across separate application workers; the in-process in-flight map protects concurrent duplicate requests within one worker.
 
-### 5.3 No refund flow
-- **Today**: `Payment.status` has `refunded` in the enum but there's no API route,
-  no worker job, and no admin UI to initiate a refund. `confirm-payment.ts` only
-  handles the `succeeded` webhook event.
-- **Why it matters**: real payments get disputed, fail, or need customer-service
-  refunds. Without a flow, every refund is a manual DB edit and a manual Dodo
-  dashboard action — error-prone and unaudited.
-- **Next step**: add a `POST /api/bids/:id/refund` admin-only route that calls a
-  new `refundPayment` method on the `PaymentProvider` interface, marks the
-  `Payment.status = "refunded"`, marks the linked `SponsoredBid.status =
-  "refunded"`, writes an `AuditLog` entry, and emits a realtime event to update
-  the board. Requires 3.1 (auth) for the admin gate.
+### 5.3 Refund accounting and reconciliation — resolved 2026-08-27
+- **Resolved**: verified `refund.succeeded` events retrieve the current Dodo payment and apply the cumulative successful refund amount. Partial refunds proportionally reduce backing; full refunds remove the bid. Operations are absolute/idempotent, audited, broadcast, and covered by integration tests.
+- **Resolved**: the worker polls old initiated payments and periodically rechecks successful payments through `GET /payments/{payment_id}`, recording attempts and errors so missed success/refund webhooks converge.
+- **Operational decision**: refunds are initiated in the authenticated Dodo dashboard because OUTRANK intentionally has no admin accounts. A public refund API would be unsafe without administrator identity.
 
-### 5.4 No payment dispute handling
-- **Today**: no code path handles Dodo `payment.dispute.created` or
-  `payment.chargeback` webhook events. They'd land in the webhook handler and be
-  silently ignored (the `verifyWebhook` → event dedup → settlement pipeline
-  doesn't recognize dispute events).
-- **Why it matters**: disputes are a normal cost of operating a payment-enabled
-  marketplace. Unhandled disputes mean we don't pull the bid off the board, don't
-  flag the account, and don't trigger a manual review.
-- **Next step**: extend the webhook handler to recognize dispute events, mark the
-  linked `SponsoredBid` as `disputed`, hide the entity from the sponsored slot,
-  write an `AuditLog` entry, and fire an alert (see 8.3 Sentry / 8.2 monitoring).
+### 5.4 Payment dispute handling — resolved 2026-08-27
+- **Resolved**: all seven Dodo dispute events are signature-verified and durably
+  deduplicated. Open, challenged, expired, accepted, and lost disputes suspend the
+  entire bid from paid backing; won and cancelled disputes retrieve the authoritative
+  Dodo payment and restore only verified non-refunded backing.
+- **Operations**: every transition is audited, broadcast, captured in PostHog, and
+  optionally emailed through Resend. `ops/DODO_DISPUTE_RUNBOOK.md` defines the manual
+  dashboard response and escalation process.
 
 ---
 
 ## 6. Realtime
 
-### 6.1 Socket.io single instance (no Redis adapter)
-- **Today**: `mini-services/outrank-realtime/index.ts` creates a single socket.io
-  server with the default in-memory adapter. There's no `@socket.io/redis-adapter`
-  and no pub/sub bus.
-- **Why it matters**: with N realtime replicas (1.4), a boost event emitted on
-  replica A doesn't reach clients connected to replica B. The board desyncs
-  between users.
-- **Next step**: install `@socket.io/redis-adapter` + `redis`, call
-  `io.adapter(createAdapter(pubClient, subClient))`. Already-compatible with the
-  existing event payload shapes — no client change required.
+### 6.1 Socket.IO Redis adapter — resolved 2026-08-27
+- **Resolved**: the realtime service uses `@socket.io/redis-adapter`. PostgreSQL remains authoritative and Redis carries cross-instance invalidation/broadcast events.
 
 ### 6.2 Reconnection state sync — partially resolved 2026-08-24
 - **Resolved**: the client tracks the latest event timestamp and requests `state.sync`
@@ -326,14 +270,12 @@ below are what stand between "working prototype" and "production marketplace".
 
 ## 7. Frontend
 
-### 7.1 Leaderboard virtualization — deferred with bounded pages
-- **Current mitigation**: the API, realtime state, and `Leaderboard.tsx` all cap a
-  client page at 48 entities; the component renders rows 4–48 only. The DOM therefore
-  cannot grow to hundreds of rows under the current product flow.
-- **Why this is deferred**: virtualization becomes worthwhile when `nextCursor` is
-  connected to a load-more UI and pages can accumulate beyond the current 48-row view.
-- **Next step**: add `@tanstack/react-virtual` when the frontend supports multi-page
-  browsing, preserving the animated top-three treatment.
+### 7.1 Leaderboard virtualization — deferred with bounded infinite scroll
+- **Resolved**: the API and frontend use bounded cursor pages, and an intersection
+  observer loads additional pages without a full-page reload.
+- **Remaining scale enhancement**: accumulated rows are not virtualized. Add
+  `@tanstack/react-virtual` only after real board size makes DOM growth measurable,
+  preserving the animated top-three treatment.
 
 ### 7.2 SSR leaderboard data — partially resolved (2026-08-24)
 - **Resolved**: `src/app/page.tsx` is now a dynamic server component. It fetches
@@ -400,14 +342,15 @@ below are what stand between "working prototype" and "production marketplace".
 - **Still open**: direct response routes, realtime/worker gauges, and a hosted
   Prometheus/Grafana or Datadog deployment are not configured yet.
 
-### 8.3 Error tracking — partially resolved (2026-08-24)
+### 8.3 Error tracking — resolved for the low-cost launch baseline
 - **Resolved**: server failures can now use a central `captureServerError`
   seam that emits structured error events with safe error details and request
   context, without logging request bodies or credentials.
 - **Resolved**: leaderboard fallback failures are captured with their request ID
   before returning the stale/empty fallback response.
-- **Still open**: an external Sentry transport, DSN configuration, source-map
-  upload, and client-side breadcrumbs remain deployment work.
+- **Decision**: paid Sentry integration is intentionally deferred. Structured server
+  logs, trace IDs, health checks, and PostHog product events are the launch baseline;
+  add a hosted exception tracker when traffic or incident volume justifies it.
 
 ### 8.4 Request tracing — partially resolved (2026-08-24)
 - **Resolved**: API requests now accept or generate a validated trace ID,
@@ -422,15 +365,13 @@ below are what stand between "working prototype" and "production marketplace".
 
 ## 9. Product
 
-### 9.1 No user accounts / identity persistence
-- **Today**: every visitor is an anonymous session. Their boosts, claims,
-  subscriptions, and payment history are tied to a session cookie that's lost
-  the moment they clear cookies or switch devices.
-- **Why it matters**: returning users have no continuity. "I boosted that last
-  week" is unrecoverable. Claimed entities can't be re-verified by the same
-  person on a new device.
-- **Next step**: see 3.1 — Auth.js with email magic-link. Anonymous sessions
-  upgrade to verified users on first auth, with all prior data migrated.
+### 9.1 No public user accounts — intentional product decision
+- **Decision**: OUTRANK has no signup/login flow. Paid bids are authorized by Dodo,
+  and the payment email is subscribed server-side to movement notifications with an
+  unsubscribe token. Anonymous submission convenience is preferred over account
+  continuity for launch.
+- **Future trigger**: add identity only if durable claims, bidder history, or a human
+  moderation/admin surface becomes a validated product requirement.
 
 ### 9.2 Notification system — partially resolved (2026-08-24)
 - **Resolved**: `POST /api/subscribe` validates and durably persists global or
@@ -480,21 +421,17 @@ below are what stand between "working prototype" and "production marketplace".
 
 ## Priority Order (suggested)
 
-If tackling these in sequence, this order minimizes risk per unit of effort:
+The remaining work should be tackled in this order:
 
-1. **3.3 Webhook signature verification** — direct money loss, small fix.
-2. **5.2 Idempotency on bid creation** — direct money loss, tiny fix.
-3. **1.1 SQLite → PostgreSQL** — unblocks everything else at scale.
-4. **1.2 In-memory → Redis** — unblocks 1.4, 6.1, and removes the rate-limit
-   bypass.
-5. **3.4 CSRF + 3.6 IP rate limiting** — cheap, closes obvious abuse vectors.
-6. **5.1 Real Dodo payment** — the revenue path.
-7. **3.1 Authentication** — unblocks 5.3, 5.4, 9.1, 9.4, 9.5.
-8. **2.1 Time-decay on scores** — without this, the product has no retention.
-9. **4.2–4.8 Real platform integrations + worker** — makes the board real.
-10. **8.1–8.3 Logging + metrics + Sentry** — operate before you scale.
-11. **2.2 Cursor pagination + 7.1 Virtualization** — scale the read path.
-12. **Everything else** — product polish, observability depth, accessibility.
+1. **Dodo merchant activation and one live smoke payment** — external launch gate;
+   keep production checkout blocked until Dodo enables the account.
+2. **Production configuration and deployment verification** — provide the PostHog
+   token, Dodo live secrets, Resend secrets, Redis, and database URL through runtime
+   secret management; then verify health, migrations, webhook delivery, and rollback.
+3. **1.4 Reliability** — introduce multi-instance/cross-region failover when traffic
+   or the uptime target justifies moving beyond the cheapest single-instance launch.
+4. **Accessibility and platform-metadata depth** — axe/screen-reader verification,
+   richer per-entity metadata, and measured virtualization/platform refresh work.
 
 ---
 

@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { realtimeUrl } from "@/server/infrastructure/realtime-url";
+import type { Entity } from "@/lib/outrank/types";
 
 export const dynamic = "force-dynamic";
 
@@ -15,17 +16,15 @@ export async function GET() {
     clearTimeout(t);
     if (!res.ok) throw new Error("bad_status");
     const data = await res.json();
-    const ents: any[] = data.entities || [];
+    const ents: Entity[] = data.entities || [];
     const rising = [...ents]
       .filter((e) => e.momentum > 0)
       .sort((a, b) => b.momentum - a.momentum)
-      .slice(0, 8)
-      .map((e) => ({ id: e.id, name: e.name, category: e.category, rank: e.rank, momentum: e.momentum, score: e.score, poster: e.poster, sub: e.sub }));
+      .slice(0, 8);
     const falling = [...ents]
       .filter((e) => e.momentum < 0)
       .sort((a, b) => a.momentum - b.momentum)
-      .slice(0, 8)
-      .map((e) => ({ id: e.id, name: e.name, category: e.category, rank: e.rank, momentum: e.momentum, score: e.score, poster: e.poster, sub: e.sub }));
+      .slice(0, 8);
     return NextResponse.json({ rising, falling }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ rising: [], falling: [] });

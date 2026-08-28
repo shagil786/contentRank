@@ -51,19 +51,21 @@ export function useLeaderboard(initialData?: LeaderState, timeframe: "today" | "
   return useInfiniteQuery<LeaderState>({
     queryKey: ["leaderboard", timeframe],
     queryFn: async ({ pageParam }) => {
-      const r = await fetch(`/api/leaderboard?limit=48&cursor=${pageParam as number}&timeframe=${timeframe}`, { cache: "no-store" });
+      const cursor = pageParam as string;
+      const r = await fetch(`/api/leaderboard?limit=48${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}&timeframe=${timeframe}`, { cache: "no-store" });
       if (!r.ok) throw new Error("fetch_failed");
       return r.json();
     },
     initialPageParam: 0,
     initialData: timeframe === "alltime" && initialData ? { pages: [initialData], pageParams: [0] } : undefined,
-    getNextPageParam: (lastPage) => lastPage.nextCursor ? Number(lastPage.nextCursor) : undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
     staleTime: 1000,
+    refetchInterval: 30_000,
   });
 }
 
 export function useTrending() {
-  return useQuery<{ rising: any[]; falling: any[] }>({
+  return useQuery<{ rising: Entity[]; falling: Entity[] }>({
     queryKey: ["trending"],
     queryFn: async () => {
       const r = await fetch("/api/trending", { cache: "no-store" });
@@ -131,13 +133,8 @@ export function useRealtime() {
         presence: st.presence,
         totalBoosts: st.totalBoosts,
       }));
-      // Keep the cache in the shape expected by useInfiniteQuery. The
-      // realtime snapshot is the newest first page, but must not replace the
-      // whole InfiniteData object with a plain LeaderState.
-      qc.setQueryData<{ pages: LeaderState[]; pageParams: unknown[] }>(["leaderboard", "alltime"], (current) => {
-        if (!current) return { pages: [st], pageParams: [0] };
-        return { ...current, pages: [st, ...current.pages.slice(1)] };
-      });
+      // Never write realtime projections into the canonical query cache.
+      // Settled PostgreSQL data is the only source of money and rank.
     };
 
     const onConnect = () => {
@@ -211,6 +208,21 @@ export function useRealtime() {
       });
     };
 
+    const onEntityUpdated = (ev: any) => {
+      const update = ev.entity as Partial<Entity> & { id: string };
+      setState((p) => ({
+        ...p,
+        entities: p.entities.map((entity) => entity.id === update.id ? { ...entity, ...update } : entity),
+      }));
+      void qc.invalidateQueries({ queryKey: ["leaderboard"] });
+      void qc.invalidateQueries({ queryKey: ["search"] });
+    };
+
+    const onLeaderboardInvalidate = () => {
+      void qc.invalidateQueries({ queryKey: ["leaderboard"] });
+      void qc.invalidateQueries({ queryKey: ["trending"] });
+    };
+
     s.on("connect", onConnect);
     s.on("disconnect", onDisconnect);
     s.on("snapshot", onSnapshot);
@@ -220,6 +232,8 @@ export function useRealtime() {
     s.on("leader.changed", onLeader);
     s.on("bid.celebration", onBidCelebration);
     s.on("entity.added", onEntityAdded);
+    s.on("entity.updated", onEntityUpdated);
+    s.on("leaderboard.invalidate", onLeaderboardInvalidate);
 
     return () => {
       s.off("connect", onConnect);
@@ -231,6 +245,8 @@ export function useRealtime() {
       s.off("leader.changed", onLeader);
       s.off("bid.celebration", onBidCelebration);
       s.off("entity.added", onEntityAdded);
+      s.off("entity.updated", onEntityUpdated);
+      s.off("leaderboard.invalidate", onLeaderboardInvalidate);
     };
   }, [qc]);
 
@@ -240,7 +256,14 @@ export function useRealtime() {
   }, []);
 
   const preview = useCallback(
-    (entityId: string, amount: number): Promise<{ newRank: number; prevRank: number; newScore: number } | null> => {
+    (entityId: string, amount: number): Promise<{
+      newRank: number;
+      prevRank: number;
+      newScore: number;
+      needed: number;
+      nextRank: number;
+      gapToNext: number;
+    } | null> => {
       return new Promise((resolve) => {
         const s = getSocket();
         const to = setTimeout(() => resolve(null), 1200);

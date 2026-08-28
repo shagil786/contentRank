@@ -1,0 +1,5 @@
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# Daily UTC backup. S3 retains encrypted backup objects for 30 days.
+17 2 * * * root BACKUP_BUCKET=contentrank-postgres-backups-241431497063-ap-south-1 POSTGRES_CONTAINER=backend-postgres-1 /opt/contentrank/backend/bin/backup-postgres-s3.sh >> /var/log/contentrank-postgres-backup.log 2>&1

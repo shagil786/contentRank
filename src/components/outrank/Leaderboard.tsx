@@ -64,7 +64,7 @@ export function Leaderboard({ entities, category, loading, onBoost, lastUpdate, 
       </div>
 
       <LayoutGroup>
-        <AnimatePresence mode="popLayout">
+        <AnimatePresence mode="popLayout" initial={false}>
           {loading && list.length === 0 ? (
             <div key="skeletons">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -72,7 +72,7 @@ export function Leaderboard({ entities, category, loading, onBoost, lastUpdate, 
               ))}
             </div>
           ) : (
-            <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <motion.div key="list" initial={false} animate={{ opacity: 1 }}>
               {/* TOP 3 hero treatment */}
               <Top3 entities={top3} category={category} onBoost={onBoost} />
 

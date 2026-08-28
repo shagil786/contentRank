@@ -20,3 +20,11 @@ export async function getRedis(): Promise<RedisClientType | null> {
   })();
   return connecting;
 }
+
+export async function closeRedis(): Promise<void> {
+  const active = client;
+  client = null;
+  connecting = null;
+  if (!active?.isOpen) return;
+  await active.quit().catch(() => active.destroy());
+}

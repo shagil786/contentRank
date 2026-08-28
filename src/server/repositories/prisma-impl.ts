@@ -3,6 +3,7 @@
 // Postgres-driver version and the rest of the backend is untouched.
 
 import { db } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import type {
   ContentRepository, CreatorRepository, MetricRepository,
   RankingRepository, PaymentRepository, ModerationRepository,
@@ -141,6 +142,72 @@ export const rankingRepo: RankingRepository = {
     }
     return out;
   },
+  async rankedContentPage({ category, timeframe, limit, cursor }) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const categoryFilter = category === "global" ? Prisma.empty : Prisma.sql`AND c."category" = ${category}`;
+    const bidTimeFilter = timeframe === "today"
+      ? Prisma.sql`AND b."settledAt" >= ${todayStart}`
+      : Prisma.empty;
+    const cursorFilter = cursor
+      ? Prisma.sql`AND (ordered."score" < ${cursor.score} OR (ordered."score" = ${cursor.score} AND ordered."createdAt" > ${cursor.createdAt}) OR (ordered."score" = ${cursor.score} AND ordered."createdAt" = ${cursor.createdAt} AND ordered."id" > ${cursor.id}))`
+      : Prisma.empty;
+    const rows = await db.$queryRaw<Array<{
+      id: string; canonicalId: string; platform: string; platformKey: string; url: string;
+      title: string; description: string | null; imageUrl: string | null; kind: string;
+      category: string; blurb: string | null; creatorId: string | null; submittedBy: string | null;
+      status: string; createdAt: Date; updatedAt: Date; score: number; backedCents: bigint; bidCount: bigint; momentum: number; rank: bigint; total: bigint;
+    }>>(Prisma.sql`
+      WITH latest AS (
+        SELECT DISTINCT ON (r."contentId") r."contentId", r."rank"
+        FROM "OrganicRanking" r
+        WHERE r."category" = ${category}
+        ORDER BY r."contentId", r."snapshotAt" DESC
+      ), bid_totals AS (
+        SELECT b."contentId", COALESCE(SUM(GREATEST(b."amount" - b."refundedAmount", 0)), 0)::bigint AS "backedCents", COUNT(*)::bigint AS "bidCount"
+        FROM "SponsoredBid" b
+        WHERE b."status" = 'settled' ${bidTimeFilter}
+        GROUP BY b."contentId"
+      ), ranked AS (
+        SELECT c.*,
+          (COALESCE(bid_totals."backedCents", 0)::numeric / 100) AS "score",
+          COALESCE(bid_totals."backedCents", 0)::bigint AS "backedCents",
+          COALESCE(bid_totals."bidCount", 0)::bigint AS "bidCount",
+          latest."rank" AS "previousRank"
+        FROM "Content" c
+        LEFT JOIN latest ON latest."contentId" = c."id"
+        LEFT JOIN bid_totals ON bid_totals."contentId" = c."id"
+        WHERE c."status" = 'live' ${categoryFilter}
+      )
+      SELECT ordered.*
+      FROM (
+        SELECT ranked.*,
+          ROW_NUMBER() OVER (ORDER BY ranked."score" DESC, ranked."createdAt" ASC, ranked."id" ASC) AS "rank",
+          COUNT(*) OVER() AS "total",
+          COALESCE(ranked."previousRank" - ROW_NUMBER() OVER (ORDER BY ranked."score" DESC, ranked."createdAt" ASC, ranked."id" ASC), 0)::int AS "momentum"
+        FROM ranked
+      ) ordered
+      WHERE TRUE ${cursorFilter}
+      ORDER BY ordered."score" DESC, ordered."createdAt" ASC, ordered."id" ASC
+      LIMIT ${limit + 1}
+    `);
+    const total = rows.length ? Number(rows[0].total) : 0;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows[pageRows.length - 1];
+    return {
+      rows: pageRows.map((row) => ({
+        content: toContent(row),
+        score: Number(row.score),
+        backedCents: Number(row.backedCents),
+        bidCount: Number(row.bidCount),
+        momentum: Number(row.momentum),
+        rank: Number(row.rank),
+      })),
+      total,
+      hasMore: rows.length > limit,
+      nextCursor: rows.length > limit && last ? { score: Number(last.score), createdAt: last.createdAt, id: last.id } : undefined,
+    };
+  },
   async organicAtOrBefore(contentId, category, at) {
     const row = await db.organicRanking.findFirst({
       where: { contentId, category, snapshotAt: { lte: at } },
@@ -148,9 +215,9 @@ export const rankingRepo: RankingRepository = {
     });
     return row ? { ...row } as OrganicRanking : null;
   },
-  async organicHistory(contentId, limit) {
+  async organicHistory(contentId, limit, category) {
     const rows = await db.organicRanking.findMany({
-      where: { contentId }, orderBy: { snapshotAt: "desc" }, take: limit,
+      where: { contentId, ...(category ? { category } : {}) }, orderBy: { snapshotAt: "desc" }, take: limit,
     });
     return rows.map(r => ({ ...r } as OrganicRanking)).reverse();
   },
@@ -172,9 +239,14 @@ export const rankingRepo: RankingRepository = {
     const row = await db.sponsoredBid.findFirst({ where: { paymentId } });
     return row ? { ...row } as SponsoredBid : null;
   },
-  async updateBidStatus(id, status, paymentId, settledAt) {
+  async updateBidStatus(id, status, paymentId, settledAt, refundedAmount) {
     await db.sponsoredBid.update({
-      where: { id }, data: { status, paymentId: paymentId ?? undefined, settledAt: settledAt ?? undefined },
+      where: { id }, data: {
+        status,
+        paymentId: paymentId ?? undefined,
+        settledAt: settledAt ?? undefined,
+        refundedAmount: refundedAmount ?? undefined,
+      },
     });
   },
   async activeBidsByContent(contentId) {
@@ -188,7 +260,16 @@ export const rankingRepo: RankingRepository = {
 export const paymentRepo: PaymentRepository = {
   async insert(p) {
     const r = await db.payment.create({
-      data: { provider: p.provider, providerPaymentId: p.providerPaymentId ?? null, amount: p.amount, currency: p.currency, status: p.status, webhookEventId: p.webhookEventId ?? null },
+      data: {
+        provider: p.provider,
+        providerPaymentId: p.providerPaymentId ?? null,
+        amount: p.amount,
+        refundedAmount: p.refundedAmount ?? 0,
+        currency: p.currency,
+        mode: p.mode,
+        status: p.status,
+        webhookEventId: p.webhookEventId ?? null,
+      },
     });
     return { ...r } as Payment;
   },
@@ -201,12 +282,59 @@ export const paymentRepo: PaymentRepository = {
     return r ? { ...r } as Payment : null;
   },
   async findByWebhookEventId(eid) {
-    const r = await db.payment.findUnique({ where: { webhookEventId: eid } });
-    return r ? { ...r } as Payment : null;
+    const event = await db.paymentWebhookEvent.findUnique({
+      where: { eventId: eid },
+      include: { payment: true },
+    });
+    if (event) return { ...event.payment } as Payment;
+    const legacy = await db.payment.findUnique({ where: { webhookEventId: eid } });
+    return legacy ? { ...legacy } as Payment : null;
+  },
+  async recordWebhookEvent(input) {
+    await db.paymentWebhookEvent.upsert({
+      where: { eventId: input.eventId },
+      create: input,
+      update: {},
+    });
   },
   async updateStatus(id, status, providerPaymentId, webhookEventId) {
     await db.payment.update({
       where: { id }, data: { status, providerPaymentId: providerPaymentId ?? undefined, webhookEventId: webhookEventId ?? undefined },
+    });
+  },
+  async updateAccounting(id, input) {
+    await db.payment.update({
+      where: { id },
+      data: {
+        status: input.status,
+        refundedAmount: input.refundedAmount,
+        providerPaymentId: input.providerPaymentId ?? undefined,
+        webhookEventId: input.webhookEventId ?? undefined,
+      },
+    });
+  },
+  async listForReconciliation({ initiatedBefore, recheckBefore, limit }) {
+    const rows = await db.payment.findMany({
+      where: {
+        providerPaymentId: { not: null },
+        OR: [
+          { status: "initiated", updatedAt: { lt: initiatedBefore } },
+          { status: "succeeded", OR: [{ lastReconciledAt: null }, { lastReconciledAt: { lt: recheckBefore } }] },
+        ],
+      },
+      orderBy: [{ lastReconciledAt: "asc" }, { updatedAt: "asc" }],
+      take: limit,
+    });
+    return rows.map((row) => ({ ...row } as Payment));
+  },
+  async markReconciled(id, error) {
+    await db.payment.update({
+      where: { id },
+      data: {
+        reconciliationAttempts: { increment: 1 },
+        lastReconciledAt: new Date(),
+        lastReconciliationError: error ? error.slice(0, 500) : null,
+      },
     });
   },
 };

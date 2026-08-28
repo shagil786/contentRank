@@ -23,7 +23,7 @@ import { ScoreCounter, IntCounter } from "./ScoreCounter";
 import { Poster } from "./Poster";
 import { RankHistory } from "./RankHistory";
 import { useUI } from "@/lib/outrank/store";
-import { useRealtime } from "./providers";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface Props {
   entity: Entity | null;
@@ -37,10 +37,8 @@ export function EntityDetail({ entity, allEntities }: Props) {
   const openBattle = useUI((s) => s.openBattle);
   const openShare = useUI((s) => s.openShare);
   const openEdit = useUI((s) => s.openEdit);
-  const { entities: liveEntities } = useRealtime();
-
-  // prefer the live version of the entity if available
-  const live = entity ? liveEntities.find((e) => e.id === entity.id) ?? entity : null;
+  const isMobile = useIsMobile();
+  const live = entity;
 
   const neighbors = useMemo(() => {
     if (!live) return { above: null, below: null };
@@ -246,10 +244,9 @@ export function EntityDetail({ entity, allEntities }: Props) {
     </div>
   );
 
-  return (
-    <>
+  return isMobile ? (
       <Drawer open={open} onOpenChange={(o) => !o && close()}>
-        <DrawerContent className="bg-paper text-ink sm:hidden max-h-[92vh]">
+        <DrawerContent className="bg-paper text-ink max-h-[92vh]">
           <DrawerHeader className="sr-only">
             <DrawerTitle>{live.name}</DrawerTitle>
             <DrawerDescription>Detail view for {live.name}.</DrawerDescription>
@@ -257,8 +254,9 @@ export function EntityDetail({ entity, allEntities }: Props) {
           {content}
         </DrawerContent>
       </Drawer>
+  ) : (
       <Sheet open={open} onOpenChange={(o) => !o && close()}>
-        <SheetContent side="right" className="hidden sm:block w-full sm:max-w-lg bg-paper text-ink border-l border-rule p-0 overflow-y-auto">
+        <SheetContent side="right" className="w-full sm:max-w-lg bg-paper text-ink border-l border-rule p-0 overflow-y-auto">
           <SheetHeader className="sr-only">
             <SheetTitle>{live.name}</SheetTitle>
             <SheetDescription>Detail view for {live.name}.</SheetDescription>
@@ -272,7 +270,6 @@ export function EntityDetail({ entity, allEntities }: Props) {
           {content}
         </SheetContent>
       </Sheet>
-    </>
   );
 }
 
@@ -304,7 +301,7 @@ function NeighborRow({
       <div className="flex-1 min-w-0">
         <div className="font-mono text-[9px] tracking-widest text-muted-foreground">{label}</div>
         <div className="font-display tracking-tighter2 truncate leading-none" style={{ fontSize: "1.05rem" }}>{entity.name}</div>
-        <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{formatScore(entity.score)} HYPE</div>
+        <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{formatScore(entity.score)} BACKED</div>
       </div>
       <button
         onClick={() => onBoost(entity)}
