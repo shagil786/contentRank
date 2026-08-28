@@ -1,15 +1,32 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import { useUI } from "@/lib/outrank/store";
 import { useRealtime } from "./providers";
 import { formatScore } from "@/lib/outrank/types";
+import { reportVisit } from "@/lib/analytics/visit-counter";
 import Link from "next/link";
 
 export function ExperimentalFooter() {
   const { entities } = useRealtime();
   const setAddOpen = useUI((s) => s.setAddOpen);
   const top = entities.slice(0, 10);
+
+  // All-time visitor count. One ping per browser session; the response total
+  // is displayed in the footer. Failures leave the line empty — never noisy.
+  const [totalVisits, setTotalVisits] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    reportVisit().then((payload) => {
+      if (!alive || !payload?.ok || payload.totalVisits === undefined) return;
+      const parsed = Number(payload.totalVisits);
+      if (Number.isFinite(parsed)) setTotalVisits(parsed);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <footer className="relative invert-block overflow-hidden mt-auto">
@@ -70,6 +87,11 @@ export function ExperimentalFooter() {
             LIVE ATTENTION MARKET · EVERY BID IS PAID
           </div>
         </div>
+        {totalVisits !== null && (
+          <div className="relative mt-3 text-center font-mono text-[9px] tracking-widest text-paper/50" title="All-time site visitors — counted anonymously, at most once per visitor per day.">
+            {totalVisits.toLocaleString("en-US")} VISITORS AND COUNTING
+          </div>
+        )}
         <nav aria-label="Legal" className="relative mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono text-[9px] tracking-widest text-paper/50">
           <Link className="hover:text-signal" href="/privacy">PRIVACY</Link>
           <Link className="hover:text-signal" href="/terms">TERMS</Link>

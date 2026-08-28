@@ -7,7 +7,7 @@ import { Prisma } from "@prisma/client";
 import type {
   ContentRepository, CreatorRepository, MetricRepository,
   RankingRepository, PaymentRepository, ModerationRepository,
-  AuditRepository, SessionRepository, SubscriptionRepository,
+  AuditRepository, SessionRepository, SubscriptionRepository, SiteStatRepository,
 } from "./interfaces";
 import type {
   Content, Creator, Metric, OrganicRanking, SponsoredBid,
@@ -441,5 +441,24 @@ export const subscriptionRepo: SubscriptionRepository = {
   },
   async markNotified(id, rank, contentId) {
     await db.subscription.update({ where: { id }, data: { lastNotifiedRank: rank, lastNotifiedContentId: contentId, lastNotifiedAt: new Date() } });
+  },
+};
+
+
+// Aggregate site counters. BigInt column; increment is a single atomic SQL
+// upsert so concurrent route instances can never lose a count.
+export const siteStatRepo: SiteStatRepository = {
+  async get(key) {
+    const row = await db.siteStat.findUnique({ where: { key } });
+    return row?.value ?? BigInt(0);
+  },
+  async increment(key, by = 1) {
+    const rows = await db.$queryRaw<Array<{ value: bigint }>>`
+      INSERT INTO "SiteStat" ("key", "value", "updatedAt")
+      VALUES (${key}, ${by}, now())
+      ON CONFLICT ("key") DO UPDATE SET "value" = "SiteStat"."value" + ${by}, "updatedAt" = now()
+      RETURNING "value"
+    `;
+    return rows[0].value;
   },
 };

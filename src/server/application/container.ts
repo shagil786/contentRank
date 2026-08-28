@@ -2,7 +2,7 @@
 // This is the ONLY place that decides which adapters/repos are used.
 // Swapping SQLite→Postgres or stub→real Dodo = editing this file.
 
-import { contentRepo, creatorRepo, metricRepo, rankingRepo, paymentRepo, moderationRepo, auditRepo, sessionRepo, subscriptionRepo } from "../repositories/prisma-impl";
+import { contentRepo, creatorRepo, metricRepo, rankingRepo, paymentRepo, moderationRepo, auditRepo, sessionRepo, subscriptionRepo, siteStatRepo } from "../repositories/prisma-impl";
 import { idempotencyStore } from "../infrastructure/idempotency";
 import { dodoProvider } from "../adapters/payments/dodo";
 import { resolveAdapterForUrl, listPlatformAdapters } from "../adapters/platforms/interface";
@@ -22,6 +22,7 @@ export const container = {
     audit: auditRepo,
     session: sessionRepo,
     subscription: subscriptionRepo,
+    siteStat: siteStatRepo,
   },
   infra: {
     idempotency: idempotencyStore,

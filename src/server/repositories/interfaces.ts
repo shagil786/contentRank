@@ -94,3 +94,10 @@ export interface IdempotencyStore {
   get<T>(key: string): Promise<{ value: T; storedAt: number } | null>;
   set<T>(key: string, value: T, ttlMs: number): Promise<void>;
 }
+
+// Aggregate, non-personal site counters (all-time visits). The value is a
+// monotonically increasing total; no per-visitor rows are ever stored.
+export interface SiteStatRepository {
+  get(key: string): Promise<bigint>;
+  increment(key: string, by?: number): Promise<bigint>;
+}

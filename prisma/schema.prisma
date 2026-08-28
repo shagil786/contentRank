@@ -237,3 +237,13 @@ model Subscription {
   @@index([email, createdAt])
   @@index([entityId, createdAt])
 }
+
+// ---- Site stats (aggregate, non-personal) ----
+// One row per named counter. Holds only totals — no IPs, no sessions, no
+// cookies, nothing identifiable. The per-visitor dedupe window lives in
+// Redis with a hashed key and expires; it is never persisted here.
+model SiteStat {
+  key       String   @id
+  value     BigInt   @default(0)
+  updatedAt DateTime @updatedAt
+}
