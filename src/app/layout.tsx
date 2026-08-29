@@ -5,6 +5,8 @@ import { QueryProvider } from "@/components/outrank/providers";
 import { PwaRegister } from "@/components/outrank/PwaRegister";
 import { AnalyticsConsent } from "@/components/outrank/AnalyticsConsent";
 
+export const metadataBase = new URL(process.env.APP_URL || "https://content-rank.lol");
+
 export const metadata: Metadata = {
   title: "OUTRANK — The internet is competing for attention.",
   description:
@@ -17,8 +19,14 @@ export const metadata: Metadata = {
     title: "OUTRANK",
     description: "The internet is competing for attention. Now you can see who owns it.",
     type: "website",
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "OUTRANK — Own the #1." }],
   },
-  twitter: { card: "summary_large_image", title: "OUTRANK", description: "Own the #1." },
+  twitter: {
+    card: "summary_large_image",
+    title: "OUTRANK",
+    description: "Own the #1.",
+    images: ["/opengraph-image"],
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
