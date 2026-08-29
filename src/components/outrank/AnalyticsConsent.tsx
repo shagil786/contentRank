@@ -1,7 +1,6 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import posthog from "posthog-js";
 import { analyticsConfigured } from "@/lib/analytics/client";
 import Link from "next/link";
 
@@ -28,14 +27,11 @@ export function AnalyticsConsent() {
 
   const choose = (next: Exclude<Consent, "unknown">) => {
     localStorage.setItem("outrank_analytics_consent", next);
+    // ALLOW reloads so instrumentation-client initializes PostHog with capture
+    // enabled from the first byte. DENY never initializes PostHog at all.
     if (next === "granted") {
-      posthog.opt_in_capturing();
-      posthog.startSessionRecording();
-      posthog.capture("analytics_consent_granted");
-      posthog.capture("$pageview");
-    } else {
-      posthog.stopSessionRecording();
-      posthog.opt_out_capturing();
+      window.location.reload();
+      return;
     }
     window.dispatchEvent(new Event("outrank-analytics-consent"));
   };
