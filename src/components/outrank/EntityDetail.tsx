@@ -204,10 +204,10 @@ export function EntityDetail({ entity, allEntities }: Props) {
               </div>
               <span className="font-mono text-[10px] tracking-widest shrink-0 group-hover:text-signal">VISIT ↗</span>
               {typeof live.views === "number" && (
-                <span className="font-mono text-[10px] tracking-widest text-white/80">{live.views.toLocaleString("en-US")} VIEWS</span>
+                <span className="font-mono text-[10px] tracking-widest text-muted-foreground group-hover:text-paper/70">{live.views.toLocaleString("en-US")} VIEWS</span>
               )}
               {typeof live.outboundClicks === "number" && (
-                <span className="font-mono text-[10px] tracking-widest text-white/80">{live.outboundClicks.toLocaleString("en-US")} CLICKS</span>
+                <span className="font-mono text-[10px] tracking-widest text-muted-foreground group-hover:text-paper/70">{live.outboundClicks.toLocaleString("en-US")} CLICKS</span>
               )}
             </a>
           </div>
