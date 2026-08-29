@@ -1,10 +1,9 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "OUTRANK — The internet is competing for attention.";
-export const size = { width: 1200, height: 630 };
+const SIZE = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-export default async function OgImage() {
+export async function GET() {
   return new ImageResponse(
     (
       <div
@@ -58,6 +57,6 @@ export default async function OgImage() {
         </div>
       </div>
     ),
-    { ...size }
+    { ...SIZE }
   );
 }
