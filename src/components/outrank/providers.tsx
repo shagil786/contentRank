@@ -61,6 +61,8 @@ export function useLeaderboard(initialData?: LeaderState, timeframe: "today" | "
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     staleTime: 1000,
     refetchInterval: 30_000,
+    // returning from a VISIT tab should surface the counted click immediately
+    refetchOnWindowFocus: true,
   });
 }
 

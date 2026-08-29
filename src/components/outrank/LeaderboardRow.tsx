@@ -117,7 +117,9 @@ export function LeaderboardRow({ entity, index, onBoost, lastUpdateTs }: Props) 
                   <a
                     href={`/api/go/${entity.id}`}
                     target="_blank"
-                    rel="noopener noreferrer nofollow"
+                    // noopener, NOT noreferrer: legacy browsers need the
+                    // Referer for /api/go's same-origin counting fallback
+                    rel="noopener nofollow"
                     onClick={(e) => e.stopPropagation()}
                     className={`shrink-0 inline-flex items-center gap-1 font-mono text-[8px] sm:text-[9px] tracking-widest px-1.5 py-0.5 border transition-colors ${isTop ? "border-paper/40 text-paper/80 hover:bg-signal hover:border-signal hover:text-white" : "border-ink/25 text-ink/80 hover:bg-ink hover:text-paper hover:border-ink"}`}
                     title={p ? `${p.openLabel} — ${entity.link}` : `View original — ${entity.link}`}

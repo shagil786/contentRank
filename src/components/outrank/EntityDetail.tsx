@@ -56,12 +56,18 @@ export function EntityDetail({ entity, allEntities }: Props) {
     openShare(live);
   };
 
-  // view beacon: one fire per opened item; the server dedupes per visitor per day
+  // view beacon: one fire per opened item; the server dedupes per visitor per day.
+  // counted responses ping the board so the open sheet reflects the new number.
   const viewedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!live || viewedRef.current === live.id) return;
     viewedRef.current = live.id;
-    fetch(`/api/view/${live.id}`, { method: "POST", keepalive: true }).catch(() => undefined);
+    fetch(`/api/view/${live.id}`, { method: "POST", keepalive: true })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((res) => {
+        if (res?.counted) window.dispatchEvent(new Event("outrank-engagement"));
+      })
+      .catch(() => undefined);
   }, [live]);
 
   if (!live) return null;
@@ -119,7 +125,9 @@ export function EntityDetail({ entity, allEntities }: Props) {
               <a
                 href={`/api/go/${live.id}`}
                 target="_blank"
-                rel="noopener noreferrer nofollow"
+                // noopener, NOT noreferrer: legacy browsers have no Sec-Fetch-*
+                // headers, so /api/go's counting fallback needs the Referer
+                rel="noopener nofollow"
                 className="group mt-5 inline-flex items-center gap-2.5 bg-signal text-white px-4 py-2.5 font-mono text-[11px] tracking-widest hover:bg-signal-dim transition-colors"
                 data-cursor="OPEN"
               >
@@ -175,7 +183,7 @@ export function EntityDetail({ entity, allEntities }: Props) {
             <a
               href={`/api/go/${live.id}`}
               target="_blank"
-              rel="noopener noreferrer nofollow"
+              rel="noopener nofollow"
               className="group flex items-center gap-3 p-3 border border-ink/20 hover:border-ink hover:bg-ink hover:text-paper transition-colors"
             >
               {p && (

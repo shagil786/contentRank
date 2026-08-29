@@ -43,6 +43,9 @@ export default function HomeClient({ initialData }: { initialData: LeaderState }
   // Realtime is presence/notification transport; it must never overwrite the
   // canonical board with an in-memory projection.
   const entities = apiEntities;
+  // The store holds the entity snapshot from click time — re-resolve against
+  // the refreshed board so open sheets show live counters (views/clicks).
+  const selectedLive = selected ? entities.find((e) => e.id === selected.id) ?? selected : selected;
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const bidReturn = searchParams.get("bid");
@@ -63,6 +66,13 @@ export default function HomeClient({ initialData }: { initialData: LeaderState }
         window.clearTimeout(retryB);
       };
     }
+  }, [refetch]);
+  // view beacon pings this when the server actually counts a view — refetch so
+  // the open detail sheet shows the new number immediately
+  useEffect(() => {
+    const onEngagement = () => void refetch();
+    window.addEventListener("outrank-engagement", onEngagement);
+    return () => window.removeEventListener("outrank-engagement", onEngagement);
   }, [refetch]);
   const firstPage = data?.pages[0];
   const activity = rt.activity.length ? rt.activity : firstPage?.activity ?? [];
@@ -91,7 +101,7 @@ export default function HomeClient({ initialData }: { initialData: LeaderState }
         {tab === "profile" && <div className="sm:hidden flex-1"><ProfilePanel /></div>}
       </div>
       <ExperimentalFooter /><div className="sm:hidden h-14" />
-      <BoostPanel /><EntityDetail entity={selected} allEntities={entities} /><GlobalSearch /><BattleMode /><AddEntity /><SubscribeDialog /><ShareCard /><EditEntity />
+      <BoostPanel /><EntityDetail entity={selectedLive} allEntities={entities} /><GlobalSearch /><BattleMode /><AddEntity /><SubscribeDialog /><ShareCard /><EditEntity />
       <OneCelebration event={rt.oneEvent} /><BidCelebration event={rt.bidCelebration} /><MobileNav />
     </main>
   );
