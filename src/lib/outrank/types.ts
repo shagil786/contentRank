@@ -65,6 +65,7 @@ export interface Entity {
   score: number;
   supporters: number;
   outboundClicks: number; // clicks through /api/go/[id] to the external link
+  views: number; // detail-sheet opens by real onsite visitors
   prevRank: number;
   rank: number;
   peakRank: number;

@@ -118,6 +118,7 @@ export async function submitContent(
     creatorId,
     submittedBy: ctx.session,
     outboundClicks: 0,
+    views: 0,
     status: input.status || "live",
   });
 

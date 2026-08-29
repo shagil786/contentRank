@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { container } from "@/server/application/container";
 import { getRedis } from "@/server/infrastructure/redis";
 import { captureServerEvent } from "@/server/infrastructure/analytics";
+import { isSameOriginNavigation } from "@/server/infrastructure/request-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ? `outrank:click:${createHash("sha256").update(`${ip}:${day}:${id}`).digest("hex").slice(0, 24)}`
       : null;
 
-    let counted = true;
-    if (key) {
+    // Count only navigations that actually started on one of our pages — bots,
+    // scrapers, and direct hits to the endpoint still get redirected, just not counted.
+    let counted = isSameOriginNavigation(req);
+    if (counted && key) {
       const redis = await getRedis();
       if (redis?.isReady) {
         const isNew = await redis.set(key, "1", { EX: DEDUPE_TTL_SECONDS, NX: true });

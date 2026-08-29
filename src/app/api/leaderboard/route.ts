@@ -40,6 +40,7 @@ function toEntity(entry: {
     score: entry.score,
     supporters: entry.bidCount,
     outboundClicks: Number((entry.content as { outboundClicks?: number }).outboundClicks ?? 0),
+    views: Number((entry.content as { views?: number }).views ?? 0),
     prevRank: entry.prevRank,
     rank: entry.rank,
     peakRank: entry.peakRank,

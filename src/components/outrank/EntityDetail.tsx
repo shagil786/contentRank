@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Sheet,
   SheetContent,
@@ -55,6 +55,14 @@ export function EntityDetail({ entity, allEntities }: Props) {
     if (!live) return;
     openShare(live);
   };
+
+  // view beacon: one fire per opened item; the server dedupes per visitor per day
+  const viewedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!live || viewedRef.current === live.id) return;
+    viewedRef.current = live.id;
+    fetch(`/api/view/${live.id}`, { method: "POST", keepalive: true }).catch(() => undefined);
+  }, [live]);
 
   if (!live) return null;
 
@@ -165,7 +173,7 @@ export function EntityDetail({ entity, allEntities }: Props) {
           <div className="p-5 sm:p-6 rule-b">
             <h3 className="font-mono text-[10px] tracking-widest text-muted-foreground mb-3">FOUND ON</h3>
             <a
-              href={live.link}
+              href={`/api/go/${live.id}`}
               target="_blank"
               rel="noopener noreferrer nofollow"
               className="group flex items-center gap-3 p-3 border border-ink/20 hover:border-ink hover:bg-ink hover:text-paper transition-colors"
@@ -187,9 +195,12 @@ export function EntityDetail({ entity, allEntities }: Props) {
                 </div>
               </div>
               <span className="font-mono text-[10px] tracking-widest shrink-0 group-hover:text-signal">VISIT ↗</span>
-                {typeof live.outboundClicks === "number" && (
-                  <span className="font-mono text-[10px] tracking-widest text-white/80">{live.outboundClicks.toLocaleString("en-US")} CLICKS</span>
-                )}
+              {typeof live.views === "number" && (
+                <span className="font-mono text-[10px] tracking-widest text-white/80">{live.views.toLocaleString("en-US")} VIEWS</span>
+              )}
+              {typeof live.outboundClicks === "number" && (
+                <span className="font-mono text-[10px] tracking-widest text-white/80">{live.outboundClicks.toLocaleString("en-US")} CLICKS</span>
+              )}
             </a>
           </div>
         );

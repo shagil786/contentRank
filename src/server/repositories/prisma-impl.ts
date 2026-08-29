@@ -21,7 +21,7 @@ type PrContent = {
   url: string; title: string; description: string | null; imageUrl: string | null;
   kind: string; category: string; blurb: string | null; creatorId: string | null;
   submittedBy: string | null; status: string; createdAt: Date; updatedAt: Date;
-  outboundClicks?: number;
+  outboundClicks?: number; views?: number;
 };
 
 const toContent = (p: PrContent): Content => ({
@@ -32,6 +32,7 @@ const toContent = (p: PrContent): Content => ({
   blurb: p.blurb ?? undefined, creatorId: p.creatorId ?? undefined,
   submittedBy: p.submittedBy ?? undefined, status: p.status as ContentStatus,
   outboundClicks: p.outboundClicks ?? 0,
+  views: p.views ?? 0,
   createdAt: p.createdAt, updatedAt: p.updatedAt,
 });
 
@@ -68,6 +69,7 @@ export const contentRepo: ContentRepository = {
         blurb: c.blurb ?? null, creatorId: c.creatorId ?? null,
         submittedBy: c.submittedBy ?? null, status: c.status,
         outboundClicks: c.outboundClicks ?? 0,
+        views: c.views ?? 0,
       },
     });
     return toContent(r);
@@ -159,7 +161,7 @@ export const rankingRepo: RankingRepository = {
       id: string; canonicalId: string; platform: string; platformKey: string; url: string;
       title: string; description: string | null; imageUrl: string | null; kind: string;
       category: string; blurb: string | null; creatorId: string | null; submittedBy: string | null;
-      status: string; createdAt: Date; updatedAt: Date; outboundClicks: number; score: number; backedCents: bigint; bidCount: bigint; momentum: number; rank: bigint; total: bigint;
+      status: string; createdAt: Date; updatedAt: Date; outboundClicks: number; views: number; score: number; backedCents: bigint; bidCount: bigint; momentum: number; rank: bigint; total: bigint;
     }>>(Prisma.sql`
       WITH latest AS (
         SELECT DISTINCT ON (r."contentId") r."contentId", r."rank"
