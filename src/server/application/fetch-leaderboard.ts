@@ -86,6 +86,22 @@ export async function fetchLeaderboard(category: Category = "global", options: {
   };
 }
 
+// Single-entity lookup for social share cards (og tags / og-image). Returns
+// rank + score when the item sits on the first board page, content-only
+// otherwise; null when the id is unknown or not live.
+export async function fetchEntityCard(id: string): Promise<{ content: Content; rank: number | null; score: number | null } | null> {
+  try {
+    const view = await fetchLeaderboard("global", { limit: 48 });
+    const hit = view.entries.find((en) => en.content.id === id);
+    if (hit) return { content: hit.content, rank: hit.rank, score: hit.score };
+  } catch {
+    // ranking read failed — still worth a content-only card below
+  }
+  const content = await container.repos.content.findById(id);
+  if (!content || content.status !== "live") return null;
+  return { content, rank: null, score: null };
+}
+
 // Full state for the realtime engine to hydrate from on boot.
 export async function fetchFullState() {
   const { repos } = container;
