@@ -6,6 +6,7 @@ services:
       args:
         NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN: ${NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN:-}
         NEXT_PUBLIC_POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST:-https://eu.i.posthog.com}
+        APP_URL: ${APP_URL:-https://content-rank.lol}
     env_file:
       - /opt/contentrank/backend/.env
     environment:

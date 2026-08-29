@@ -3,8 +3,11 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN=""
 ARG NEXT_PUBLIC_POSTHOG_HOST="https://eu.i.posthog.com"
+ARG APP_URL="https://content-rank.lol"
 ENV NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN=${NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN}
 ENV NEXT_PUBLIC_POSTHOG_HOST=${NEXT_PUBLIC_POSTHOG_HOST}
+# metadataBase is evaluated at build time — bake the canonical origin in
+ENV APP_URL=${APP_URL}
 COPY package*.json ./
 RUN npm ci
 COPY . .
