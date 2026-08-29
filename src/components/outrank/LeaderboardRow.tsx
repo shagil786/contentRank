@@ -115,7 +115,7 @@ export function LeaderboardRow({ entity, index, onBoost, lastUpdateTs }: Props) 
                 const p = detectPlatform(entity.link);
                 return (
                   <a
-                    href={entity.link}
+                    href={`/api/go/${entity.id}`}
                     target="_blank"
                     rel="noopener noreferrer nofollow"
                     onClick={(e) => e.stopPropagation()}

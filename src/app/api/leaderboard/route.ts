@@ -39,6 +39,7 @@ function toEntity(entry: {
     image: c.imageUrl || undefined,
     score: entry.score,
     supporters: entry.bidCount,
+    outboundClicks: Number((entry.content as { outboundClicks?: number }).outboundClicks ?? 0),
     prevRank: entry.prevRank,
     rank: entry.rank,
     peakRank: entry.peakRank,

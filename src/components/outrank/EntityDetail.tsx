@@ -109,7 +109,7 @@ export function EntityDetail({ entity, allEntities }: Props) {
             const p = detectPlatform(live.link);
             return (
               <a
-                href={live.link}
+                href={`/api/go/${live.id}`}
                 target="_blank"
                 rel="noopener noreferrer nofollow"
                 className="group mt-5 inline-flex items-center gap-2.5 bg-signal text-white px-4 py-2.5 font-mono text-[11px] tracking-widest hover:bg-signal-dim transition-colors"
@@ -187,6 +187,9 @@ export function EntityDetail({ entity, allEntities }: Props) {
                 </div>
               </div>
               <span className="font-mono text-[10px] tracking-widest shrink-0 group-hover:text-signal">VISIT ↗</span>
+                {typeof live.outboundClicks === "number" && (
+                  <span className="font-mono text-[10px] tracking-widest text-white/80">{live.outboundClicks.toLocaleString("en-US")} CLICKS</span>
+                )}
             </a>
           </div>
         );

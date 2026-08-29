@@ -117,6 +117,7 @@ export async function submitContent(
     blurb,
     creatorId,
     submittedBy: ctx.session,
+    outboundClicks: 0,
     status: input.status || "live",
   });
 

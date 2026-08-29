@@ -46,6 +46,7 @@ export interface Content {
   creatorId?: string;
   submittedBy?: string;
   status: ContentStatus;
+  outboundClicks: number;
   createdAt: Date;
   updatedAt: Date;
 }

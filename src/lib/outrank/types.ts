@@ -64,6 +64,7 @@ export interface Entity {
   image?: string; // og:image URL, if one was resolved at submit time
   score: number;
   supporters: number;
+  outboundClicks: number; // clicks through /api/go/[id] to the external link
   prevRank: number;
   rank: number;
   peakRank: number;
