@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
 
     return jsonResponse(result.value, result.value.ok ? 200 : 400, { requestId: ctx.requestId, sessionId: ctx.session });
   } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.error("[checkout] failed:", error instanceof Error ? error.message : error);
+    }
     return jsonResponse({ ok: false, reason: checkoutFailureReason(error) }, 503, { requestId: ctx.requestId, sessionId: ctx.session });
   }
 }
