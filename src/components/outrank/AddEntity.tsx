@@ -225,12 +225,12 @@ export function AddEntity() {
         setOpen(nextOpen);
       }}
     >
-      <DialogContent className="max-w-lg w-[92vw] bg-paper text-ink border-ink p-0 overflow-hidden">
+      <DialogContent className="max-w-lg w-[92vw] bg-paper text-ink border-ink p-0">
         <DialogHeader className="sr-only">
           <DialogTitle>Put something on the board</DialogTitle>
           <DialogDescription>Add a new entity to the OUTRANK leaderboard.</DialogDescription>
         </DialogHeader>
-        <div className="bg-ink text-paper px-5 py-3 flex items-center justify-between">
+        <div className="bg-ink text-paper px-5 py-3 flex items-center justify-between rounded-t-lg">
           <span className="font-mono text-[10px] tracking-widest">+ PUT SOMETHING ON THE BOARD</span>
           <button
             onClick={() => {
@@ -404,17 +404,19 @@ export function AddEntity() {
             />
           </div>
 
-          {/* commit */}
-          <button
-            onClick={submit}
-            disabled={busy || !name.trim() || !initialBid.trim()}
-            className="w-full py-4 bg-signal text-white font-display tracking-tighter2 text-lg hover:bg-signal-dim transition-colors disabled:opacity-40"
-          >
-            {busy ? "ADDING…" : "ADD →"}
-          </button>
-          <p className="text-center font-mono text-[9px] leading-relaxed tracking-wide text-muted-foreground">
-            BY PAYING, YOU AGREE TO THE <Link className="underline hover:text-signal" href="/terms">TERMS</Link> AND <Link className="underline hover:text-signal" href="/refunds">REFUND POLICY</Link>.
-          </p>
+          {/* sticky commit — the form is long; ADD must never depend on scrolling */}
+          <div className="sticky bottom-0 -mx-4 sm:-mx-5 mt-4 bg-paper px-4 sm:px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-rule">
+            <button
+              onClick={submit}
+              disabled={busy || !name.trim() || !initialBid.trim()}
+              className="w-full py-4 bg-signal text-white font-display tracking-tighter2 text-lg hover:bg-signal-dim transition-colors disabled:opacity-40"
+            >
+              {busy ? "ADDING…" : "ADD →"}
+            </button>
+            <p className="mt-2 text-center font-mono text-[9px] leading-relaxed tracking-wide text-muted-foreground">
+              BY PAYING, YOU AGREE TO THE <Link className="underline hover:text-signal" href="/terms">TERMS</Link> AND <Link className="underline hover:text-signal" href="/refunds">REFUND POLICY</Link>.
+            </p>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

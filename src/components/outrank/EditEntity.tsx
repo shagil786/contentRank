@@ -46,9 +46,9 @@ export function EditEntity() {
   }
 
   return <Dialog open={!!target} onOpenChange={(open) => !open && close()}>
-    <DialogContent className="max-w-lg w-[92vw] bg-paper text-ink border-ink p-0 overflow-hidden">
+    <DialogContent className="max-w-lg w-[92vw] bg-paper text-ink border-ink p-0">
       <DialogHeader className="sr-only"><DialogTitle>Edit entity</DialogTitle><DialogDescription>Edit this entity&apos;s details.</DialogDescription></DialogHeader>
-      <div className="bg-ink text-paper px-5 py-3 flex items-center justify-between"><span className="font-mono text-[10px] tracking-widest">EDIT ENTITY</span><button onClick={close} className="font-mono text-[10px] tracking-widest text-paper/60 hover:text-signal">CLOSE ✕</button></div>
+      <div className="bg-ink text-paper px-5 py-3 flex items-center justify-between rounded-t-lg"><span className="font-mono text-[10px] tracking-widest">EDIT ENTITY</span><button onClick={close} className="font-mono text-[10px] tracking-widest text-paper/60 hover:text-signal">CLOSE ✕</button></div>
       <div className="p-5 space-y-4">
         <label className="block"><span className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">NAME</span><Input value={title} onChange={(event) => setTitle(event.target.value)} className={`w-full ${inputCls}`} /></label>
         <label className="block"><span className="font-mono text-[10px] tracking-widest text-muted-foreground block mb-2">BLURB</span><Textarea value={blurb} onChange={(event) => setBlurb(event.target.value)} rows={2} className={`w-full ${inputCls} resize-none`} /></label>

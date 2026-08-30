@@ -41,7 +41,7 @@ export function BattleMode() {
 
   return (
     <Dialog open={!!battle} onOpenChange={(o) => !o && close()}>
-      <DialogContent className="max-w-4xl w-[95vw] bg-paper text-ink border-ink p-0 overflow-hidden">
+      <DialogContent className="max-w-4xl w-[95vw] bg-paper text-ink border-ink p-0 overflow-y-auto overflow-x-hidden">
         <DialogHeader className="sr-only">
           <DialogTitle>{a.name} vs {b.name}</DialogTitle>
           <DialogDescription>Head-to-head battle for rank.</DialogDescription>

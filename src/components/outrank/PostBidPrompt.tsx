@@ -10,7 +10,7 @@ export function PostBidPrompt() {
 
   return (
     <Dialog open={!!postBid} onOpenChange={(open) => !open && close()}>
-      <DialogContent className="max-w-lg w-[92vw] bg-paper text-ink border-ink p-0 overflow-hidden" showCloseButton={false}>
+      <DialogContent className="max-w-lg w-[92vw] bg-paper text-ink border-ink p-0 overflow-y-auto overflow-x-hidden" showCloseButton={false}>
         <DialogHeader className="sr-only">
           <DialogTitle>Bid placed</DialogTitle>
           <DialogDescription>Choose whether to track this entity.</DialogDescription>
