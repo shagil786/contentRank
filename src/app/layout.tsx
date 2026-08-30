@@ -1,9 +1,15 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "@/components/outrank/providers";
 import { PwaRegister } from "@/components/outrank/PwaRegister";
 import { AnalyticsConsent } from "@/components/outrank/AnalyticsConsent";
+
+// shrink the page (not just the visual viewport) when the mobile keyboard
+// opens, so bottom-anchored drawers keep their action buttons on screen
+export const viewport: Viewport = {
+  interactiveWidget: "resizes-content",
+};
 
 export const metadata: Metadata = {
   // Must live INSIDE metadata — a standalone metadataBase export is ignored by Next

@@ -250,16 +250,19 @@ function BoostBody({ target, close }: { target: Entity; close: () => void }) {
         </div>
       </div>
 
-      <button
-        onClick={onSponsor}
-        disabled={sponsoring || effAmount < 100}
-        className="w-full mt-5 py-4 bg-signal text-white font-display tracking-tighter2 text-lg hover:bg-signal-dim transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        {sponsoring ? "OPENING CHECKOUT…" : `PLACE BID · ${formatUsd(effAmount)} →`}
-      </button>
-      <p className="mt-2 text-center font-mono text-[9px] leading-relaxed tracking-wide text-muted-foreground">
-        BY PAYING, YOU AGREE TO THE <Link className="underline hover:text-signal" href="/terms">TERMS</Link> AND <Link className="underline hover:text-signal" href="/refunds">REFUND POLICY</Link>.
-      </p>
+      {/* sticky CTA — stays on screen regardless of scroll or keyboard height */}
+      <div className="sticky bottom-0 -mx-4 sm:-mx-6 mt-5 bg-paper px-4 sm:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-rule">
+        <button
+          onClick={onSponsor}
+          disabled={sponsoring || effAmount < 100}
+          className="w-full py-4 bg-signal text-white font-display tracking-tighter2 text-lg hover:bg-signal-dim transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {sponsoring ? "OPENING CHECKOUT…" : `PLACE BID · ${formatUsd(effAmount)} →`}
+        </button>
+        <p className="mt-2 text-center font-mono text-[9px] leading-relaxed tracking-wide text-muted-foreground">
+          BY PAYING, YOU AGREE TO THE <Link className="underline hover:text-signal" href="/terms">TERMS</Link> AND <Link className="underline hover:text-signal" href="/refunds">REFUND POLICY</Link>.
+        </p>
+      </div>
     </div>
   );
 }
